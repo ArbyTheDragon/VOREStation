@@ -8,81 +8,92 @@
 	mob_swap_flags = MONKEY|SLIME|SIMPLE_ANIMAL
 	mob_push_flags = MONKEY|SLIME|SIMPLE_ANIMAL
 
-	var/show_stat_health = 1	//does the percentage health show in the stat panel for the mob
+	//Settings for played mobs
+	var/show_stat_health = 1		// Does the percentage health show in the stat panel for the mob
+	var/ai_inactive = 0 			// Set to 1 to turn off most AI actions
 
-	var/icon_living = ""
-	var/icon_dead = ""
-	var/icon_gib = null	//We only try to show a gibbing animation if this exists.
+	//Mob icon settings
+	var/icon_living = ""			// The iconstate if we're alive, required
+	var/icon_dead = ""				// The iconstate if we're dead, required
+	var/icon_gib = null				// The iconstate for being gibbed, optional
+	var/icon_rest = null			// The iconstate for resting, optional
 
-	var/list/speak = list()
-	var/speak_chance = 0
-	var/list/emote_hear = list()	//Hearable emotes
-	var/list/emote_see = list()		//Unlike speak_emote, the list of things in this variable only show by themselves with no spoken text. IE: Ian barks, Ian yaps
+	//Mob talking settings
+	universal_speak = 0				// Can all mobs in the entire universe understand this one?
+	var/speak_chance = 0			// Probability that I talk (this is 'X in 200' chance since even 1/100 is pretty noisy)
+	var/reacts = 0					// Reacts to some things being said
+	var/list/speak = list()			// Things I might say if I talk
+	var/list/emote_hear = list()	// Hearable emotes I might perform
+	var/list/emote_see = list()		// Unlike speak_emote, the list of things in this variable only show by themselves with no spoken text. IE: Ian barks, Ian yaps
+	var/list/say_understood = list()// List of things to say when accepting an order
+	var/list/say_cannot = list()	// List of things to say when they cannot comply
+	var/list/reactions = list() 	// List of "string" = "reaction" and things they hear will be searched for string.
 
-	var/turns_per_move = 1
-	var/turns_since_move = 0
-	universal_speak = 0		//No, just no.
-	var/meat_amount = 0
-	var/meat_type
-	var/stop_automated_movement = 0 //Use this to temporarely stop random movement or to if you write special movement code for animals.
-	var/wander = 1	// Does the mob wander around when idle?
-	var/stop_automated_movement_when_pulled = 1 //When set to 1 this stops the animal from moving when someone is pulling it.
+	//Mob movement settings
+	var/wander = 1					// Does the mob wander around when idle?
+	var/turns_per_move = 1			// How many life() cycles to wait between each move?
+	var/stop_automated_movement = 0 // Use this to temporarely stop random movement or to if you write special movement code for animals.
+	var/stop_when_pulled = 1 		// When set to 1 this stops the animal from moving when someone is pulling it.
+	var/obstacles = list()			// Things this mob refuses to move through
+	var/speed = 0					// Higher speed is slower, negative speed is faster.
+	var/obj/item/weapon/card/id/myid// An ID card if they have one to give them access to stuff.
 
-	//Interaction
-	var/response_help   = "tries to help"
-	var/response_disarm = "tries to disarm"
-	var/response_harm   = "tries to hurt"
-	var/harm_intent_damage = 3
+	//Mob interaction
+	var/response_help   = "tries to help"	// If clicked on help intent
+	var/response_disarm = "tries to disarm" // If clicked on disarm intent
+	var/response_harm   = "tries to hurt"	// If clicked on harm intent
+	var/harm_intent_damage = 3		// How much an unarmed harm click does to this mob.
+	var/meat_amount = 0				// How much meat to drop from this mob when butchered
+	var/obj/meat_type				// The meat object to drop
+	var/obj/list/loot_types			// The list of lootable objects to drop, with "/path = prob%" structure
+	var/recruitable = 0				// Mob can be bossed around
+	var/recruit_cmd_str = "Hey,"	// The thing you prefix commands with when bossing them around
 
-	//Temperature effect
-	var/minbodytemp = 250
-	var/maxbodytemp = 350
-	var/heat_damage_per_tick = 3	//amount of damage applied if animal's body temperature is higher than maxbodytemp
-	var/cold_damage_per_tick = 2	//same as heat_damage_per_tick, only if the bodytemperature it's lower than minbodytemp
+	//Mob environment settings
+	var/minbodytemp = 250			// Minimum "okay" temperature in kelvin
+	var/maxbodytemp = 350			// Maximum of above
+	var/heat_damage_per_tick = 3	// Amount of damage applied if animal's body temperature is higher than maxbodytemp
+	var/cold_damage_per_tick = 2	// Same as heat_damage_per_tick, only if the bodytemperature it's lower than minbodytemp
 	var/fire_alert = 0
 
-	//Atmos effect - Yes, you can make creatures that require phoron or co2 to survive. N2O is a trace gas and handled separately, hence why it isn't here. It'd be hard to add it. Hard and me don't mix (Yes, yes make all the dick jokes you want with that.) - Errorage
-	var/min_oxy = 5
-	var/max_oxy = 0					//Leaving something at 0 means it's off - has no maximum
-	var/min_tox = 0
-	var/max_tox = 1
-	var/min_co2 = 0
-	var/max_co2 = 5
-	var/min_n2 = 0
-	var/max_n2 = 0
-	var/unsuitable_atoms_damage = 2	//This damage is taken when atmos doesn't fit all the requirements above
-	var/speed = 0 //LETS SEE IF I CAN SET SPEEDS FOR SIMPLE MOBS WITHOUT DESTROYING EVERYTHING. Higher speed is slower, negative speed is faster
+	var/min_oxy = 5					// Oxygen in moles, minimum, 0 is 'no minimum
+	var/max_oxy = 0					// Oxygen in moles, maximum, 0 is 'no maximum'
+	var/min_tox = 0					// Phoron min
+	var/max_tox = 1					// Phoron max
+	var/min_co2 = 0					// CO2 min
+	var/max_co2 = 5					// CO2 max
+	var/min_n2 = 0					// N2 min
+	var/max_n2 = 0					// N2 max
+	var/unsuitable_atoms_damage = 2	// This damage is taken when atmos doesn't fit all the requirements above
 
-	//LETTING SIMPLE ANIMALS ATTACK? WHAT COULD GO WRONG. Defaults to zero so Ian can still be cuddly
-	var/melee_damage_lower = 0
-	var/melee_damage_upper = 0
-	var/attacktext = "attacked"
-	var/attack_sound = null
-	var/friendly = "nuzzles"
-	var/environment_smash = 0
-	var/resistance		  = 0	// Damage reduction
+	//Mob attack settings
+	var/melee_damage_lower = 0		// Lower bound of randomized melee damage
+	var/melee_damage_upper = 0		// Upper bound of randomized melee damage
+	var/attacktext = "attacked"		// "You are [attacktext] by the mob!"
+	var/attack_sound = null			// Sound to play when I attack
+	var/friendly = "nuzzles"		// What mobs do to people when they aren't really hostile
+	var/environment_smash = 0		// How much environment damage do I do when I hit stuff?
 
-	//Null rod stuff
-	var/supernatural = 0
-	var/purge = 0
+	//Hostility settings
+	var/hostile = 0					// Do I even attack?
+	var/attack_same = 0				// Do I attack members of my own faction?
+	var/supernatural = 0			// If the mob is supernatural (used in null-rod stuff for banishing?)
 
-	//Pulling hostile mob vars down
-	var/stance = STANCE_IDLE	//Used to determine behavior
-	var/mob/living/target_mob
-	var/attack_same = 0
-	var/ranged = 0
-	var/rapid = 0
-	var/projectiletype
-	var/projectilesound
-	var/casingtype
-	var/move_to_delay = 4 //delay for the automated movement.
-	var/list/friends = list()
-	var/break_stuff_probability = 0
-	var/destroy_surroundings = 0
-	var/shuttletarget = null
-	var/enroute = 0
-	var/ai_inactive = 0 // Set to 1 to turn off most AI actions in Life()
+	//Attack ranged settings
+	var/ranged = 0					// Do I attack at range?
+	var/shoot_range = 7				// How far away do I start shooting from?
+	var/rapid = 0					// Three-round-burst fire mode
+	var/projectiletype				// The projectiles I shoot
+	var/projectilesound				// The sound I make when I do it
+	var/casingtype					// What to make the hugely laggy casings pile out of
 
+	//Attack movement settings
+	var/move_to_delay = 4			// Delay for the automated movement (deciseconds)
+	var/destroy_surroundings = 0	// Should I smash things to get to my target?
+	var/break_stuff_probability = 0	// Chances of me breaking stuff (each life() tick) to get to my target
+
+	//Damage resistances
+	var/resistance = 0				// Damage reduction for all types
 	var/list/resistances = list(
 								HALLOSS = 0,
 								BRUTE = 1,
@@ -92,7 +103,15 @@
 								CLONE = 0
 								)
 
-	var/hostile = 0
+	//Counters and other non-user-settable variables
+	var/stance = STANCE_IDLE		// Used to determine behavior
+	var/turns_since_move = 0 		// A counter for how many life() cycles since move
+	var/shuttletarget = null		// Shuttle's here, time to get to it
+	var/enroute = 0					// If the shuttle is en-route
+	var/purge = 0					// A counter used for null-rod stuff
+	var/mob/living/target_mob		// Who I'm trying to attack
+	var/mob/living/list/friends = list() // People who are immune to my wrath, for now
+	var/turf/walk_list = list()		// List of turfs to walk through to get somewhere
 
 /mob/living/simple_animal/New()
 	..()
@@ -102,45 +121,69 @@
 	if(src && src.client)
 		src.client.screen = list()
 		src.client.screen += src.client.void
+		ai_inactive = 1
+	..()
+
+/mob/living/simple_animal/Logout()
+	if(src && !src.client)
+		spawn(15 SECONDS) //15 seconds to get back into the mob before it goes wild
+			ai_inactive = initial(ai_inactive) //So if they never have an AI, they stay that way.
 	..()
 
 /mob/living/simple_animal/updatehealth()
-	return
+	//Alive, becoming dead
+	if((stat < DEAD) && (health <= 0))
+		death()
+
+	//Dead, becoming alive
+	else if((stat >= DEAD) && (health > 0))
+		dead_mob_list -= src
+		living_mob_list += src
+		stat = CONSCIOUS
+		density = 1
+
+	//Overhealth
+	else if(health > maxHealth)
+		health = maxHealth
+
+/mob/living/simple_animal/update_icon()
+	..()
+	//Awake and normal
+	if((stat == CONSCIOUS) && !resting)
+		icon_state = icon_living
+
+	//Resting or KO'd
+	else if(((stat == UNCONSCIOUS) || resting) && icon_rest)
+		icon_state = icon_rest
+
+	//Dead
+	else if(stat >= DEAD)
+		icon_state = icon_dead
+
+	//Backup
+	else
+		icon_state = initial(icon_state)
 
 /mob/living/simple_animal/Life()
 	..()
 
 	//Health
-	if(stat == DEAD)
-		if(health > 0)
-			icon_state = icon_living
-			dead_mob_list -= src
-			living_mob_list += src
-			stat = CONSCIOUS
-			density = 1
-		else
-			walk(src, 0)
-		return 0
-
-
-	if(health <= 0)
-		death()
+	update_health()
+	if(stat >= DEAD)
 		return
-
-	if(health > maxHealth)
-		health = maxHealth
 
 	handle_stunned()
 	handle_weakened()
 	handle_paralysed()
 	handle_supernatural()
+	update_icon()
 
 	//Movement
-	if(!client && !stop_automated_movement && wander && !anchored && !ai_inactive)
-		if(isturf(src.loc) && !resting && !buckled && canmove)		//This is so it only moves if it's not inside a closet, gentics machine, etc.
-			turns_since_move++
+	if(!ai_inactive && !stop_automated_movement && wander && !anchored) //Allowed to move?
+		if(isturf(src.loc) && !resting && !buckled && canmove) //Physically capable of moving?
+			turns_since_move++ //Increment turns since move (turns are life() cycles)
 			if(turns_since_move >= turns_per_move)
-				if(!(stop_automated_movement_when_pulled && pulledby)) //Soma animals don't move when pulled
+				if(!(stop_when_pulled && pulledby)) //Some animals don't move when pulled
 					var/moving_to = 0 // otherwise it always picks 4, fuck if I know.   Did I mention fuck BYOND
 					moving_to = pick(cardinal)
 					dir = moving_to			//How about we turn them the direction they are moving, yay.
@@ -148,7 +191,7 @@
 					turns_since_move = 0
 
 	//Speaking
-	if(!client && speak_chance)
+	if(!ai_inactive && speak_chance)
 		if(rand(0,200) < speak_chance)
 			if(speak && speak.len)
 				if((emote_hear && emote_hear.len) || (emote_see && emote_see.len))
@@ -236,7 +279,7 @@
 		adjustBruteLoss(unsuitable_atoms_damage)
 
 	//Hostility
-	if(!stat && !client && hostile && !ai_inactive)
+	if(!stat && !ai_inactive && hostile)
 		switch(stance)
 			if(STANCE_IDLE)
 				target_mob = FindTarget()
@@ -384,7 +427,6 @@
 		stat(null, "Health: [round((health / maxHealth) * 100)]%")
 
 /mob/living/simple_animal/death(gibbed, deathmessage = "dies!")
-	icon_state = icon_dead
 	density = 0
 	return ..(gibbed,deathmessage)
 
@@ -491,7 +533,7 @@
 
 		else if(istype(A, /obj/mecha)) // Our line of sight stuff was already done in ListTargets().
 			var/obj/mecha/M = A
-			if (M.occupant)
+			if(M.occupant && ((M.occupant.faction != src.faction) || attack_same))
 				stance = STANCE_ATTACK
 				T = M
 				break
@@ -501,22 +543,66 @@
 /mob/living/simple_animal/proc/Found(var/atom/A)
 	return
 
+//Move to a target (or near if we're ranged)
 /mob/living/simple_animal/proc/MoveToTarget()
 	stop_automated_movement = 1
 	if(!target_mob || SA_attackable(target_mob))
 		stance = STANCE_IDLE
+		GiveUpMoving()
 	if(target_mob in ListTargets(10))
-		if(ranged)
-			if(get_dist(src, target_mob) <= 6)
-				OpenFire(target_mob)
-			else
-				walk_to(src, target_mob, 1, move_to_delay)
-		else
+		//Within pew-pew range
+		if(ranged && (get_dist(src, target_mob) <= shoot_range))
+			OpenFire(target_mob)
+
+		//Within melee range
+		else if(get_dist(src, target_mob) <= 1)
 			stance = STANCE_ATTACKING
-			walk_to(src, target_mob, 1, move_to_delay)
 
+		//Wanna get closer
+		else
+			if(!walk_list.len)
+				//GetPath failed for whatever reason, just smash into things towards them
+				if(!GetPath(target_mob))
+					walk_to(src, target_mob, 1, move_to_delay) //We try ye-olde fashioned way.
+
+				//GetPath gave us a usable path, route along it
+				else
+					//How close do we want to get, anyway?
+					var/get_to = ranged ? shoot_range-1 : 1 //The -1 just behaves better so if they step back they aren't instantly out of range
+					while(get_dist(src, target_mob) > get_to)
+						MoveOnce()
+						sleep(move_to_delay)
+
+walk_to(src, target_mob, 1, move_to_delay)
+
+//A* now, try to a path to a target
+/mob/living/simple_animal/proc/GetPath(var/atom/target)
+	walk_list.Cut()
+	walk_list = AStar(get_turf(loc), target, /turf/proc/CardinalTurfsWithAccess, /turf/proc/Distance, 0, 250, id = myid, exclude = obstacles)
+
+	return walk_list.len
+
+//Take one step along a path
+/mob/living/simple_animal/proc/MoveOnce()
+	if(!walk_list.len)
+		GiveUpMoving()
+
+	Step_to(src, src.walk_list[1])
+	walk_list -= src.walk_list[1]
+
+//Giving up on moving
+/mob/living/simple_animal/proc/GiveUpMoving()
+	stop_automated_movement = 0
+	walk_list.Cut()
+
+//Return home, all-in-one proc (though does target scan and drop out if they see one)
+/mob/living/simple_animal/proc/GoHome()
+	stop_automated_movement = 0
+	GetPath home
+	MoveOnce home until home
+
+//Get into attack mode on a target
 /mob/living/simple_animal/proc/AttackTarget()
-
 	stop_automated_movement = 1
 	if(!target_mob || SA_attackable(target_mob))
 		LoseTarget()
@@ -528,6 +614,7 @@
 		AttackingTarget()
 		return 1
 
+//Attack the target in melee
 /mob/living/simple_animal/proc/AttackingTarget()
 	if(!Adjacent(target_mob))
 		return
@@ -540,16 +627,18 @@
 		M.attack_generic(src,rand(melee_damage_lower,melee_damage_upper),attacktext)
 		return M
 
+//We lost sight of the target
 /mob/living/simple_animal/proc/LoseTarget()
 	stance = STANCE_IDLE
 	target_mob = null
 	walk(src, 0)
 
+//What to do when we lose the target
 /mob/living/simple_animal/proc/LostTarget()
 	stance = STANCE_IDLE
 	walk(src, 0)
 
-
+//Find me some targets
 /mob/living/simple_animal/proc/ListTargets(var/dist = 7)
 	var/list/L = hearers(src, dist)
 
@@ -559,6 +648,7 @@
 
 	return L
 
+//The actual top-level ranged attack proc
 /mob/living/simple_animal/proc/OpenFire(target_mob)
 	var/target = target_mob
 	visible_message("\red <b>[src]</b> fires at [target]!", 1)
@@ -586,7 +676,7 @@
 	target_mob = null
 	return
 
-
+//Shoot a bullet at someone
 /mob/living/simple_animal/proc/Shoot(var/target, var/start, var/user, var/bullet = 0)
 	if(target == start)
 		return
@@ -601,6 +691,7 @@
 	A.launch(target)
 	return
 
+//Break through windows/other things
 /mob/living/simple_animal/proc/DestroySurroundings()
 	if(prob(break_stuff_probability))
 		for(var/dir in cardinal) // North, South, East, West
@@ -612,7 +703,7 @@
 			if(istype(obstacle, /obj/structure/window) || istype(obstacle, /obj/structure/closet) || istype(obstacle, /obj/structure/table) || istype(obstacle, /obj/structure/grille))
 				obstacle.attack_generic(src,rand(melee_damage_lower,melee_damage_upper),attacktext)
 
-
+//Check for shuttle bumrush
 /mob/living/simple_animal/proc/check_horde()
 	return 0
 	if(emergency_shuttle.shuttle.location)
@@ -629,6 +720,7 @@
 			enroute = 0
 			stop_automated_movement = 0
 
+//Shuttle bumrush
 /mob/living/simple_animal/proc/horde()
 	var/turf/T = get_step_to(src, shuttletarget)
 	for(var/atom/A in T)
@@ -650,6 +742,7 @@
 			if(!src.stat)
 				horde()
 
+//Touches a wire, etc
 /mob/living/simple_animal/electrocute_act(var/shock_damage, var/obj/source, var/siemens_coeff = 1.0, var/def_zone = null)
 	shock_damage *= siemens_coeff
 	if (shock_damage < 1)
@@ -662,6 +755,7 @@
 	s.set_up(5, 1, loc)
 	s.start()
 
+//Shot with taser/stunvolver
 /mob/living/simple_animal/stun_effect_act(var/stun_amount, var/agony_amount, var/def_zone, var/used_weapon=null)
 	var/stunDam = 0
 	var/agonyDam = 0
@@ -673,3 +767,7 @@
 	if(agony_amount)
 		agonyDam += agony_amount * 0.5
 		adjustFireLoss(agonyDam)
+
+//Commands, reactions, etc
+/mob/living/simple_animal/hear_say(var/message, var/verb = "says", var/datum/language/language = null, var/alt_name = "", var/italics = 0, var/mob/speaker = null, var/sound/speech_sound, var/sound_vol)
+	return //Do interesting things TODO

@@ -61,7 +61,7 @@
 	response_help  = "pets"
 	response_disarm = "gently pushes aside"
 	response_harm   = "desperately attacks"
-	stop_automated_movement_when_pulled = 0
+	stop_when_pulled = 0
 	maxHealth = 80
 	health = 80 // Polar bear will fuck you up.
 	melee_damage_lower = 20
