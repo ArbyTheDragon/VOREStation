@@ -23,8 +23,6 @@
 	attacktext = "pecked"
 	attack_sound = 'sound/weapons/bite.ogg'
 
-	break_stuff_probability = 5
-
 	faction = "geese"
 
 

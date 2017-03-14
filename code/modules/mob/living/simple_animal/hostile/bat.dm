@@ -56,7 +56,7 @@
 		return 0
 	return ..()
 
-/mob/living/simple_animal/hostile/scarybat/AttackingTarget()
+/mob/living/simple_animal/hostile/scarybat/PunchTarget()
 	. =..()
 	var/mob/living/L = .
 	if(istype(L))

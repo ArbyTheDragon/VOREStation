@@ -27,6 +27,7 @@
 	var/list/emote_see = list()		// Unlike speak_emote, the list of things in this variable only show by themselves with no spoken text. IE: Ian barks, Ian yaps
 	var/list/say_understood = list()// List of things to say when accepting an order
 	var/list/say_cannot = list()	// List of things to say when they cannot comply
+	var/list/say_target = list()	// List of things to say when they find a target
 	var/list/reactions = list() 	// List of "string" = "reaction" and things they hear will be searched for string.
 
 	//Mob movement settings
@@ -77,7 +78,9 @@
 
 	//Hostility settings
 	var/hostile = 0					// Do I even attack?
+	var/view_range = 12				// Scan for targets in this range.
 	var/attack_same = 0				// Do I attack members of my own faction?
+	var/friend_same = 0				// Do I make friends with all my own faction that I see?
 	var/supernatural = 0			// If the mob is supernatural (used in null-rod stuff for banishing?)
 
 	//Attack ranged settings
@@ -89,9 +92,9 @@
 	var/casingtype					// What to make the hugely laggy casings pile out of
 
 	//Attack movement settings
+	var/run_at_them = 0				// Don't use A* pathfinding, use walk_to
 	var/move_to_delay = 4			// Delay for the automated movement (deciseconds)
 	var/destroy_surroundings = 0	// Should I smash things to get to my target?
-	var/break_stuff_probability = 0	// Chances of me breaking stuff (each life() tick) to get to my target
 
 	//Damage resistances
 	var/resistance = 0				// Damage reduction for all types
@@ -104,7 +107,13 @@
 								CLONE = 0
 								)
 
-	//Counters and other non-user-settable variables
+	//Scary debug things
+	var/path_display = 1			// Will display the path in green when pathing
+	var/path_icon = 'icons/misc/debug_group.dmi' // What icon to use for the overlay
+	var/path_icon_state = "red"		// What state to use for the overlay
+	var/icon/path_overlay			// A reference to restart
+
+	////// These are used for IPC so don't edit them manually //////
 	var/stance = STANCE_IDLE		// Used to determine behavior
 	var/turns_since_move = 0 		// A counter for how many life() cycles since move
 	var/shuttletarget = null		// Shuttle's here, time to get to it
@@ -112,12 +121,20 @@
 	var/purge = 0					// A counter used for null-rod stuff
 	var/mob/living/target_mob		// Who I'm trying to attack
 	var/mob/living/list/friends = list() // People who are immune to my wrath, for now
-	var/turf/list/walk_list = list()		// List of turfs to walk through to get somewhere
+	var/mob/living/simple_animal/faction_friends = list() // Other simple mobs I have seen and am buds with
+	var/turf/list/walk_list = list()// List of turfs to walk through to get somewhere
+	var/astarpathing = 0			// Am I currently pathing to somewhere?
+	var/stance_changed = 0			// When our stance last changed (world.time)
+	var/following = 0				// Are we following a PC around?
+	var/target_last_seen = 0		// When did we last see them?
+	////// ////// //////
 
 /mob/living/simple_animal/New()
 	..()
 	verbs -= /mob/verb/observe
 	home_turf = get_turf(src)
+	path_overlay = new(path_icon,path_icon_state)
+	move_to_delay = max(3,move_to_delay) //Protection against people coding things incorrectly and A* pathing 100% of the time
 
 /mob/living/simple_animal/Login()
 	if(src && src.client)
@@ -282,23 +299,37 @@
 	if(!atmos_suitable)
 		adjustBruteLoss(unsuitable_atoms_damage)
 
-	//Hostility
-	if(!stat && !ai_inactive && hostile)
-		switch(stance)
-			if(STANCE_IDLE)
-				target_mob = FindTarget()
-
-			if(STANCE_ATTACK)
-				if(destroy_surroundings)
-					DestroySurroundings()
-				MoveToTarget()
-
-			if(STANCE_ATTACKING)
-				if(destroy_surroundings)
-					DestroySurroundings()
-				AttackTarget()
+	//Stanceyness
+	if(!stat && !ai_inactive)
+		handle_stance()
 
 	return 1
+
+/mob/living/simple_animal/proc/handle_stance(var/new_stance)
+	if(new_stance)
+		stance = new_stance
+		stance_changed = world.time
+		world.log << "SA: handle_stance() changing to [new_stance]"
+
+	switch(stance)
+		if(STANCE_IDLE)
+			move_to_delay = initial(move_to_delay)*2 //Walk back.
+			//Yes I'm breaking this into two if()'s for ease of reading
+
+			//If we ARE ALLOWED TO
+			if(!run_at_them && home_turf && (world.time - stance_changed) > 10 SECONDS)
+				//If we should RIGHT NOW
+				if(!following && !stop_automated_movement && (get_dist(src,home_turf) > world.view))
+					GoHome()
+
+			//Search for targets while idle
+			if(hostile)
+				FindTarget()
+		if(STANCE_ATTACK)
+			move_to_delay = initial(move_to_delay)
+			MoveToTarget()
+		if(STANCE_ATTACKING)
+			AttackTarget()
 
 /mob/living/simple_animal/proc/handle_supernatural()
 	if(purge)
@@ -453,15 +484,21 @@
 	health = Clamp(health - damage, 0, maxHealth)
 
 /mob/living/simple_animal/proc/SA_attackable(target_mob)
+	world.log << "SA: SA_attackable([target_mob])"
 	if (isliving(target_mob))
 		var/mob/living/L = target_mob
-		if(!L.stat && L.health >= 0)
-			return (0)
+		world.log << "SA: SA_attackable, living [L.stat],[L.health]"
+		if(!L.stat)
+			world.log << "SA: SA_attackable, living, attackable"
+			return 1
 	if (istype(target_mob,/obj/mecha))
+		world.log << "SA: SA_attackable, mecha"
 		var/obj/mecha/M = target_mob
 		if (M.occupant)
-			return (0)
-	return 1
+			world.log << "SA: SA_attackable, mecha, attackable"
+			return 1
+	world.log << "SA: SA_attackable, doesn't seem attackable"
+	return 0
 
 /mob/living/simple_animal/say(var/message)
 	var/verb = "says"
@@ -506,10 +543,10 @@
 
 	//Hostile procs moved down
 /mob/living/simple_animal/proc/FindTarget()
-
+	world.log << "SA: FindTarget() seeking!"
 	var/atom/T = null
 	stop_automated_movement = 0
-	for(var/atom/A in ListTargets(10))
+	for(var/atom/A in ListTargets(view_range))
 
 		if(A == src)
 			continue
@@ -525,104 +562,223 @@
 				continue
 			else if(L in friends)
 				continue
+			else if(!SA_attackable(L))
+				continue
 			else
 				if(!L.stat)
-					stance = STANCE_ATTACK
 					T = L
 					break
 
 		else if(istype(A, /obj/mecha)) // Our line of sight stuff was already done in ListTargets().
 			var/obj/mecha/M = A
-			if(M.occupant && ((M.occupant.faction != src.faction) || attack_same))
-				stance = STANCE_ATTACK
+			if(!SA_attackable(M))
+				continue
+			if((M.occupant.faction != src.faction) || attack_same)
 				T = M
 				break
-	return T
 
+	//You found one!
+	if(T)
+		world.log << "SA: FindTarget() found [T]!"
+		target_mob = T
+		handle_stance(STANCE_ATTACK)
+		if(say_target.len)
+			say(pick(say_target))
 
 /mob/living/simple_animal/proc/Found(var/atom/A)
 	return
 
 //Move to a target (or near if we're ranged)
 /mob/living/simple_animal/proc/MoveToTarget()
+	//If we were chasing someone and we can't anymore, give up.
+	if(!target_mob || !SA_attackable(target_mob))
+		world.log << "SA: MoveToTarget: Losing target at top."
+		LoseTarget()
+		return
+
+	//Don't wander
 	stop_automated_movement = 1
-	if(!target_mob || SA_attackable(target_mob))
-		stance = STANCE_IDLE
-		GiveUpMoving()
 
-	//Only keep after them if we can still see them
-	if(target_mob in ListTargets(10))
-		//Within pew-pew range
-		if(ranged && (get_dist(src, target_mob) <= shoot_range))
-			OpenFire(target_mob)
+	//We recompute our path every time we're called if we can still see them
+	if(target_mob in ListTargets(view_range))
 
-		//Within melee range
-		else if(get_dist(src, target_mob) <= 1)
-			stance = STANCE_ATTACKING
+		//Recompute the path if we were using one since we can still see them.
+		if(astarpathing)
+			astarpathing = 0
+			walk_list.Cut()
+
+		//Find out where we're getting to
+		var/get_to = ranged ? shoot_range-1 : 1 //Shoot range -1 just because we don't want to constantly get kited
+		var/distance = get_dist(src,target_mob)
+		world.log << "SA: MoveToTarget: Wanna get to [get_to], and we're [distance] away"
+
+		//We're here!
+		if(distance <= get_to)
+			world.log << "SA: MoveToTarget: Within attack range!"
+			handle_stance(STANCE_ATTACKING)
 
 		//Wanna get closer
 		else
 			//We're just setting out, making a new path, or we can't path with A*
 			if(!walk_list.len)
-				//GetPath failed for whatever reason, just smash into things towards them
-				if(!GetPath(get_turf(target_mob)))
-					log_debug("[src] pathing using walk_to instead of A* to [target_mob]")
-					walk_to(src, target_mob, 1, move_to_delay) //We try ye-olde fashioned way.
+				world.log << "SA: MoveToTarget: No existing walk_list"
 
-			//We have a path, and we're on our way! TODO update this if the target moves??
-			if(walk_list.len)
-			//How close do we want to get, anyway?
-				log_debug("[src] pathing using A* to [target_mob]")
-				var/get_to = ranged ? shoot_range-1 : 1 //The -1 just behaves better so if they step back they aren't instantly out of range
-				while(get_dist(src, target_mob) > get_to)
-					MoveOnce()
-					sleep(move_to_delay)
+				//GetPath failed for whatever reason, just smash into things towards them
+				if(run_at_them || !GetPath(get_turf(target_mob),get_to))
+					if(path_display)
+						world.log << "[src] pathing using walk_to instead of A* to [target_mob]"
+
+					//We try the built-in way to stay close
+					walk_to(src, target_mob, get_to, move_to_delay)
+					world.log << "SA: MoveToTarget: walk_to([src],[target_mob],[get_to],[move_to_delay])"
+
+					//Break shit in their direction! LEME SMAHSH
+					var/dir_to_mob = get_dir(src,target_mob)
+					dir = dir_to_mob
+					DestroySurroundings(dir_to_mob)
+					world.log << "SA: MoveToTarget: DestroySurroundings([get_dir(src,target_mob)])"
+
+			//We have a path! We aren't already pathing it!
+			if(walk_list.len && !astarpathing)
+				spawn(1)
+
+					//Do the path!
+					var/result = WalkPath(target_thing = target_mob, target_dist = get_to)
+
+					//WalkPath failed, either interrupted for recalc, or something else
+					if(!result)
+						return
+
+					//WalkPath either got close enough or we ran out of path
+					if(result)
+						spawn(1)
+							MoveToTarget()
+
+
+	//We can't see them, and we don't have a path we're trying to follow to find them
+	else if(!astarpathing)
+		LoseTarget() //Just forget it.
 
 //A* now, try to a path to a target
-/mob/living/simple_animal/proc/GetPath(var/turf/target)
+/mob/living/simple_animal/proc/GetPath(var/turf/target,var/get_to = 1,var/max_distance = world.view*6)
+	if(path_display)
+		world.log << "SA: GetPath([target],[get_to],[max_distance])"
 	walk_list.Cut()
-	walk_list = AStar(get_turf(loc), target, /turf/proc/CardinalTurfsWithAccess, /turf/proc/Distance, 0, 100, id = myid, exclude = obstacles)
+	var/list/new_path = AStar(get_turf(loc), target, /turf/proc/CardinalTurfsWithAccess, /turf/proc/Distance, min_target_dist = get_to, max_node_depth = max_distance, id = myid, exclude = obstacles)
+
+	if(new_path && new_path.len)
+		walk_list = new_path
+		if(path_display)
+			for(var/turf/T in walk_list)
+				T.overlays |= path_overlay
+	else
+		return 0
 
 	return walk_list.len
 
+//Walk along our A* path, target_thing allows us to stop early if we're nearby
+/mob/living/simple_animal/proc/WalkPath(var/atom/target_thing,var/target_dist = 1,var/proc/steps_callback = null,var/every_steps = 4)
+	world.log << "SA: WalkPath() (steps:[walk_list.len])"
+	if(!walk_list || !walk_list.len)
+		return
+
+		astarpathing = 1
+		var/step_count = 0
+		while(walk_list.len)
+			//We're supposed to stop
+			if(!astarpathing && !stat && !buckled && !weakened && !stunned)
+				return 0
+
+			//Take a step, recalc distance
+			MoveOnce()
+			step_count++
+
+			//If we have a particular target we care about, look for them
+			if(target_thing && (get_dist(src,target_thing) <= target_dist))
+				return target_thing
+
+			//If we have a callback
+			if(steps_callback && (step_count >= every_steps))
+				call(steps_callback)()
+
+			//And wait for the time to our next step
+			sleep(move_to_delay)
+
+		//Finished the path
+		astarpathing = 0
+		return 1
+		world.log << "SA: WalkPath() exited"
+
 //Take one step along a path
 /mob/living/simple_animal/proc/MoveOnce()
+	world.log << "SA: MoveOnce() (steps left:[walk_list.len])"
 	if(!walk_list.len)
-		GiveUpMoving()
+		return
 
-	step_to(src, src.walk_list[1])
+	if(path_display)
+		var/turf/T = src.walk_list[1]
+		T.overlays -= path_overlay
+
+	step_towards(src, src.walk_list[1])
 	walk_list -= src.walk_list[1]
 
 //Giving up on moving
 /mob/living/simple_animal/proc/GiveUpMoving()
-	stop_automated_movement = 0
+	world.log << "SA: GiveUpMoving() on [src]"
+	if(path_display)
+		for(var/turf/T in walk_list)
+			T.overlays -= path_overlay
 	walk_list.Cut()
+	astarpathing = 0
+	walk(src, 0)
+	stop_automated_movement = 0
 
 //Return home, all-in-one proc (though does target scan and drop out if they see one)
 /mob/living/simple_animal/proc/GoHome()
-	stop_automated_movement = 1
-	if(!home_turf) return
-
-	if(GetPath(home_turf))
-		while((get_dist(src, home_turf) > 4) && walk_list.len) //Just get within 4, that's close enough.
+	if(!home_turf || run_at_them) return
+	if(astarpathing) GiveUpMoving()
+	var/close_enough = 4
+	var/look_in = 250
+	world.log << "SA: GoHome() on [src]"
+	if(GetPath(home_turf,close_enough,look_in))
+		stop_automated_movement = 1
+		var/step = 0
+		while(walk_list.len && stance == STANCE_IDLE)
+			astarpathing = 1
 			MoveOnce()
+			step++
+			if(step >= 4)
+				step = 0
+				handle_stance() //Handle my idle stance more often (target searching or whatever)
 			sleep(move_to_delay)
+		GiveUpMoving()
 
 //Get into attack mode on a target
 /mob/living/simple_animal/proc/AttackTarget()
 	stop_automated_movement = 1
-	if(!target_mob || SA_attackable(target_mob))
+	if(!target_mob || !SA_attackable(target_mob))
 		LoseTarget()
 		return 0
-	if(!(target_mob in ListTargets(10)))
+	if(!(target_mob in ListTargets(view_range)))
 		LostTarget()
 		return 0
-	if(get_dist(src, target_mob) <= 1)	//Attacking
-		AttackingTarget()
+
+	var/distance = get_dist(src, target_mob)
+	//AAAAH!
+	if(distance <= 1)
+		PunchTarget()
 		return 1
+	//Open fire!
+	else if(ranged && (distance <= shoot_range))
+		ShootTarget(target_mob)
+		return 1
+	//They ran away!
+	else
+		handle_stance(STANCE_ATTACK)
+		return 0
 
 //Attack the target in melee
-/mob/living/simple_animal/proc/AttackingTarget()
+/mob/living/simple_animal/proc/PunchTarget()
 	if(!Adjacent(target_mob))
 		return
 	if(isliving(target_mob))
@@ -634,29 +790,8 @@
 		M.attack_generic(src,rand(melee_damage_lower,melee_damage_upper),attacktext)
 		return M
 
-//We lost sight of the target
-/mob/living/simple_animal/proc/LoseTarget()
-	stance = STANCE_IDLE
-	target_mob = null
-	walk(src, 0)
-
-//What to do when we lose the target
-/mob/living/simple_animal/proc/LostTarget()
-	stance = STANCE_IDLE
-	walk(src, 0)
-
-//Find me some targets
-/mob/living/simple_animal/proc/ListTargets(var/dist = 7)
-	var/list/L = hearers(src, dist)
-
-	for (var/obj/mecha/M in mechas_list)
-		if (M.z == src.z && get_dist(src, M) <= dist)
-			L += M
-
-	return L
-
 //The actual top-level ranged attack proc
-/mob/living/simple_animal/proc/OpenFire(target_mob)
+/mob/living/simple_animal/proc/ShootTarget(target_mob)
 	var/target = target_mob
 	visible_message("\red <b>[src]</b> fires at [target]!", 1)
 
@@ -679,7 +814,7 @@
 		if(casingtype)
 			new casingtype
 
-	stance = STANCE_IDLE
+	handle_stance(STANCE_IDLE)
 	target_mob = null
 	return
 
@@ -698,17 +833,46 @@
 	A.launch(target)
 	return
 
+//We can't see the target
+/mob/living/simple_animal/proc/LoseTarget()
+	handle_stance(STANCE_IDLE)
+	target_mob = null
+	GiveUpMoving()
+
+//Target is no longer valid
+/mob/living/simple_animal/proc/LostTarget()
+	handle_stance(STANCE_IDLE)
+	GiveUpMoving()
+
+//Find me some targets
+/mob/living/simple_animal/proc/ListTargets(var/dist = view_range)
+	var/list/L = hearers(src, dist)
+
+	for (var/obj/mecha/M in mechas_list)
+		if (M.z == src.z && get_dist(src, M) <= dist)
+			L += M
+
+	return L
+
 //Break through windows/other things
-/mob/living/simple_animal/proc/DestroySurroundings()
-	if(prob(break_stuff_probability))
-		for(var/dir in cardinal) // North, South, East, West
-			for(var/obj/structure/window/obstacle in get_step(src, dir))
-				if(obstacle.dir == reverse_dir[dir]) // So that windows get smashed in the right order
-					obstacle.attack_generic(src,rand(melee_damage_lower,melee_damage_upper),attacktext)
-					return
-			var/obj/structure/obstacle = locate(/obj/structure, get_step(src, dir))
-			if(istype(obstacle, /obj/structure/window) || istype(obstacle, /obj/structure/closet) || istype(obstacle, /obj/structure/table) || istype(obstacle, /obj/structure/grille))
-				obstacle.attack_generic(src,rand(melee_damage_lower,melee_damage_upper),attacktext)
+/mob/living/simple_animal/proc/DestroySurroundings(var/direction)
+	if(!direction)
+		direction = pick(cardinal) //FLAIL WILDLY
+
+	for(var/obj/structure/window/obstacle in get_step(src, direction))
+		if(obstacle.dir == reverse_dir[dir]) // So that windows get smashed in the right order
+			obstacle.attack_generic(src,rand(melee_damage_lower,melee_damage_upper),attacktext)
+			return
+
+	var/obj/structure/obstacle = locate(/obj/structure, get_step(src, direction))
+	if(istype(obstacle, /obj/structure/window) || istype(obstacle, /obj/structure/closet) || istype(obstacle, /obj/structure/table) || istype(obstacle, /obj/structure/grille))
+		obstacle.attack_generic(src,rand(melee_damage_lower,melee_damage_upper),attacktext)
+		return
+
+	var/obj/machinery/door/baddoor = locate(/obj/machinery/door, get_step(src, direction))
+	if(istype(baddoor) && baddoor.density)
+		baddoor.attack_generic(src,rand(melee_damage_lower,melee_damage_upper),attacktext)
+		return
 
 //Check for shuttle bumrush
 /mob/living/simple_animal/proc/check_horde()

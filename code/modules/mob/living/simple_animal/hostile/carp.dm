@@ -34,8 +34,6 @@
 	max_n2 = 0
 	minbodytemp = 0
 
-	break_stuff_probability = 15
-
 	faction = "carp"
 
 /mob/living/simple_animal/hostile/carp/Process_Spacemove(var/check_drift = 0)
@@ -46,7 +44,7 @@
 	if(.)
 		custom_emote(1,"nashes at [.]")
 
-/mob/living/simple_animal/hostile/carp/AttackingTarget()
+/mob/living/simple_animal/hostile/carp/PunchTarget()
 	. =..()
 	var/mob/living/L = .
 	if(istype(L))

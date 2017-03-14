@@ -42,7 +42,7 @@
 	if(.)
 		audible_emote("growls at [.]")
 
-/mob/living/simple_animal/hostile/tree/AttackingTarget()
+/mob/living/simple_animal/hostile/tree/PunchTarget()
 	. =..()
 	var/mob/living/L = .
 	if(istype(L))
