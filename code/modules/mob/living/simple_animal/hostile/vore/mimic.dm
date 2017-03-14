@@ -82,7 +82,7 @@
 	if(.)
 		trigger()
 
-/mob/living/simple_animal/hostile/vore/mimic/crate/AttackingTarget()
+/mob/living/simple_animal/hostile/vore/mimic/crate/PunchTarget()
 	. = ..()
 	if(.)
 		icon_state = initial(icon_state)
@@ -112,7 +112,7 @@
 		O.loc = C
 	..()
 
-/mob/living/simple_animal/hostile/vore/mimic/crate/AttackingTarget()
+/mob/living/simple_animal/hostile/vore/mimic/crate/PunchTarget()
 	. =..()
 	var/mob/living/L = .
 	if(istype(L))
@@ -185,7 +185,7 @@ var/global/list/protected_objects = list(/obj/structure/table, /obj/structure/ca
 	if(destroy_objects)
 		..()
 
-/mob/living/simple_animal/hostile/vore/mimic/copy/AttackingTarget()
+/mob/living/simple_animal/hostile/vore/mimic/copy/PunchTarget()
 	. =..()
 	if(knockdown_people)
 		var/mob/living/L = .

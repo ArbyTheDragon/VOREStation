@@ -32,8 +32,6 @@
 	max_n2 = 0
 	minbodytemp = 0
 
-	break_stuff_probability = 15
-
 	faction = "carp"
 
 /mob/living/simple_animal/hostile/vore/carp/Process_Spacemove(var/check_drift = 0)
@@ -44,7 +42,7 @@
 	if(.)
 		custom_emote(1,"nashes at [.]")
 
-/mob/living/simple_animal/hostile/vore/carp/AttackingTarget()
+/mob/living/simple_animal/hostile/vore/carp/PunchTarget()
 	. =..()
 	var/mob/living/L = .
 	if(istype(L))
@@ -78,7 +76,6 @@
 	min_n2 = 0
 	max_n2 = 0
 	minbodytemp = 0
-	break_stuff_probability = 15
 
 /mob/living/simple_animal/hostile/vore/large/carp/Process_Spacemove(var/check_drift = 0)
 	return 1	//No drifting in space for space carp!
@@ -88,7 +85,7 @@
 	if(.)
 		custom_emote(1,"nashes at [.]")
 
-/mob/living/simple_animal/hostile/vore/large/carp/AttackingTarget()
+/mob/living/simple_animal/hostile/vore/large/carp/PunchTarget()
 	. =..()
 	var/mob/living/L = .
 	if(istype(L))
