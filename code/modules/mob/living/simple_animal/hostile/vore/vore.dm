@@ -121,7 +121,7 @@ Don't use ranged mobs for vore mobs.
 			"The stomach glorps and gurgles as it tries to work you into slop.")
 	..()
 
-/mob/living/simple_animal/hostile/vore/AttackingTarget()
+/mob/living/simple_animal/hostile/vore/PunchTarget()
 	if(isliving(target_mob.loc)) //They're inside a mob, maybe us, ignore!
 		return
 
