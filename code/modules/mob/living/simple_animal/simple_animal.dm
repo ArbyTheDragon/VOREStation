@@ -37,6 +37,7 @@
 	var/obstacles = list()			// Things this mob refuses to move through
 	var/speed = 0					// Higher speed is slower, negative speed is faster.
 	var/obj/item/weapon/card/id/myid// An ID card if they have one to give them access to stuff.
+	var/turf/home_turf				// Set when they spawned, they try to come back here sometimes.
 
 	//Mob interaction
 	var/response_help   = "tries to help"	// If clicked on help intent
@@ -111,23 +112,26 @@
 	var/purge = 0					// A counter used for null-rod stuff
 	var/mob/living/target_mob		// Who I'm trying to attack
 	var/mob/living/list/friends = list() // People who are immune to my wrath, for now
-	var/turf/walk_list = list()		// List of turfs to walk through to get somewhere
+	var/turf/list/walk_list = list()		// List of turfs to walk through to get somewhere
 
 /mob/living/simple_animal/New()
 	..()
 	verbs -= /mob/verb/observe
+	home_turf = get_turf(src)
 
 /mob/living/simple_animal/Login()
 	if(src && src.client)
 		src.client.screen = list()
 		src.client.screen += src.client.void
 		ai_inactive = 1
+		src.client << "<span class='notice'>Mob AI disabled while you are controlling the mob.</span>"
 	..()
 
 /mob/living/simple_animal/Logout()
 	if(src && !src.client)
 		spawn(15 SECONDS) //15 seconds to get back into the mob before it goes wild
-			ai_inactive = initial(ai_inactive) //So if they never have an AI, they stay that way.
+			if(src && !src.client)
+				ai_inactive = initial(ai_inactive) //So if they never have an AI, they stay that way.
 	..()
 
 /mob/living/simple_animal/updatehealth()
@@ -168,7 +172,7 @@
 	..()
 
 	//Health
-	update_health()
+	updatehealth()
 	if(stat >= DEAD)
 		return
 
@@ -358,8 +362,6 @@
 			M.do_attack_animation(src)
 
 		if(I_HURT)
-			if(M.loc == src) //VOREStation Add (prevents attacking from inside mobs)
-				return
 			adjustBruteLoss(harm_intent_damage)
 			M.visible_message("\red [M] [response_harm] \the [src]")
 			M.do_attack_animation(src)
@@ -391,8 +393,6 @@
 			O.attack(src, user, user.zone_sel.selecting)
 
 /mob/living/simple_animal/hit_with_weapon(obj/item/O, mob/living/user, var/effective_force, var/hit_zone)
-	if (user.loc == src) //VOREStation Edit (prevents hitting animals from inside with weapons)
-		return 1
 	visible_message("<span class='danger'>\The [src] has been attacked with \the [O] by [user].</span>")
 
 	if(O.force <= resistance)
@@ -549,6 +549,8 @@
 	if(!target_mob || SA_attackable(target_mob))
 		stance = STANCE_IDLE
 		GiveUpMoving()
+
+	//Only keep after them if we can still see them
 	if(target_mob in ListTargets(10))
 		//Within pew-pew range
 		if(ranged && (get_dist(src, target_mob) <= shoot_range))
@@ -560,25 +562,26 @@
 
 		//Wanna get closer
 		else
+			//We're just setting out, making a new path, or we can't path with A*
 			if(!walk_list.len)
 				//GetPath failed for whatever reason, just smash into things towards them
-				if(!GetPath(target_mob))
+				if(!GetPath(get_turf(target_mob)))
+					log_debug("[src] pathing using walk_to instead of A* to [target_mob]")
 					walk_to(src, target_mob, 1, move_to_delay) //We try ye-olde fashioned way.
 
-				//GetPath gave us a usable path, route along it
-				else
-					//How close do we want to get, anyway?
-					var/get_to = ranged ? shoot_range-1 : 1 //The -1 just behaves better so if they step back they aren't instantly out of range
-					while(get_dist(src, target_mob) > get_to)
-						MoveOnce()
-						sleep(move_to_delay)
-
-walk_to(src, target_mob, 1, move_to_delay)
+			//We have a path, and we're on our way! TODO update this if the target moves??
+			if(walk_list.len)
+			//How close do we want to get, anyway?
+				log_debug("[src] pathing using A* to [target_mob]")
+				var/get_to = ranged ? shoot_range-1 : 1 //The -1 just behaves better so if they step back they aren't instantly out of range
+				while(get_dist(src, target_mob) > get_to)
+					MoveOnce()
+					sleep(move_to_delay)
 
 //A* now, try to a path to a target
-/mob/living/simple_animal/proc/GetPath(var/atom/target)
+/mob/living/simple_animal/proc/GetPath(var/turf/target)
 	walk_list.Cut()
-	walk_list = AStar(get_turf(loc), target, /turf/proc/CardinalTurfsWithAccess, /turf/proc/Distance, 0, 250, id = myid, exclude = obstacles)
+	walk_list = AStar(get_turf(loc), target, /turf/proc/CardinalTurfsWithAccess, /turf/proc/Distance, 0, 100, id = myid, exclude = obstacles)
 
 	return walk_list.len
 
@@ -587,7 +590,7 @@ walk_to(src, target_mob, 1, move_to_delay)
 	if(!walk_list.len)
 		GiveUpMoving()
 
-	Step_to(src, src.walk_list[1])
+	step_to(src, src.walk_list[1])
 	walk_list -= src.walk_list[1]
 
 //Giving up on moving
@@ -597,9 +600,13 @@ walk_to(src, target_mob, 1, move_to_delay)
 
 //Return home, all-in-one proc (though does target scan and drop out if they see one)
 /mob/living/simple_animal/proc/GoHome()
-	stop_automated_movement = 0
-	GetPath home
-	MoveOnce home until home
+	stop_automated_movement = 1
+	if(!home_turf) return
+
+	if(GetPath(home_turf))
+		while((get_dist(src, home_turf) > 4) && walk_list.len) //Just get within 4, that's close enough.
+			MoveOnce()
+			sleep(move_to_delay)
 
 //Get into attack mode on a target
 /mob/living/simple_animal/proc/AttackTarget()
