@@ -68,7 +68,7 @@
 	get_light_and_color(parent)
 	..()
 
-/mob/living/simple_animal/hostile/giant_spider/AttackingTarget()
+/mob/living/simple_animal/hostile/giant_spider/PunchTarget()
 	. = ..()
 	if(isliving(.))
 		var/mob/living/L = .
@@ -78,7 +78,7 @@
 				L << "<span class='warning'>You feel a tiny prick.</span>"
 				L.reagents.add_reagent(poison_type, poison_per_bite)
 
-/mob/living/simple_animal/hostile/giant_spider/nurse/AttackingTarget()
+/mob/living/simple_animal/hostile/giant_spider/nurse/PunchTarget()
 	. = ..()
 	if(ishuman(.))
 		var/mob/living/carbon/human/H = .

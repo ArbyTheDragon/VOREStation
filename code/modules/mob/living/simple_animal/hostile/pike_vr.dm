@@ -20,8 +20,6 @@
 	melee_damage_lower = 20
 	melee_damage_upper = 25
 
-	break_stuff_probability = 35
-
 /mob/living/simple_animal/hostile/carp/pike/weak
 	health = 75
 	maxHealth = 75
