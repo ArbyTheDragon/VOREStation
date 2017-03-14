@@ -56,7 +56,7 @@
 	var/maxbodytemp = 350			// Maximum of above
 	var/heat_damage_per_tick = 3	// Amount of damage applied if animal's body temperature is higher than maxbodytemp
 	var/cold_damage_per_tick = 2	// Same as heat_damage_per_tick, only if the bodytemperature it's lower than minbodytemp
-	var/fire_alert = 0
+	var/fire_alert = 0				// 0 = fine, 1 = hot, 2 = cold
 
 	var/min_oxy = 5					// Oxygen in moles, minimum, 0 is 'no minimum
 	var/max_oxy = 0					// Oxygen in moles, maximum, 0 is 'no maximum'
@@ -565,9 +565,8 @@
 			else if(!SA_attackable(L))
 				continue
 			else
-				if(!L.stat)
-					T = L
-					break
+				T = L
+				break
 
 		else if(istype(A, /obj/mecha)) // Our line of sight stuff was already done in ListTargets().
 			var/obj/mecha/M = A
@@ -616,44 +615,42 @@
 		if(distance <= get_to)
 			world.log << "SA: MoveToTarget: Within attack range!"
 			handle_stance(STANCE_ATTACKING)
+			return
 
-		//Wanna get closer
-		else
-			//We're just setting out, making a new path, or we can't path with A*
-			if(!walk_list.len)
-				world.log << "SA: MoveToTarget: No existing walk_list"
+		//We're just setting out, making a new path, or we can't path with A*
+		if(!walk_list.len)
+			world.log << "SA: MoveToTarget: No existing walk_list"
 
-				//GetPath failed for whatever reason, just smash into things towards them
-				if(run_at_them || !GetPath(get_turf(target_mob),get_to))
-					if(path_display)
-						world.log << "[src] pathing using walk_to instead of A* to [target_mob]"
+			//GetPath failed for whatever reason, just smash into things towards them
+			if(run_at_them || !GetPath(get_turf(target_mob),get_to))
+				if(path_display)
+					world.log << "[src] pathing using walk_to instead of A* to [target_mob]"
 
-					//We try the built-in way to stay close
-					walk_to(src, target_mob, get_to, move_to_delay)
-					world.log << "SA: MoveToTarget: walk_to([src],[target_mob],[get_to],[move_to_delay])"
+				//We try the built-in way to stay close
+				walk_to(src, target_mob, get_to, move_to_delay)
+				world.log << "SA: MoveToTarget: walk_to([src],[target_mob],[get_to],[move_to_delay])"
 
-					//Break shit in their direction! LEME SMAHSH
-					var/dir_to_mob = get_dir(src,target_mob)
-					dir = dir_to_mob
-					DestroySurroundings(dir_to_mob)
-					world.log << "SA: MoveToTarget: DestroySurroundings([get_dir(src,target_mob)])"
+				//Break shit in their direction! LEME SMAHSH
+				var/dir_to_mob = get_dir(src,target_mob)
+				dir = dir_to_mob
+				DestroySurroundings(dir_to_mob)
+				world.log << "SA: MoveToTarget: DestroySurroundings([get_dir(src,target_mob)])"
 
-			//We have a path! We aren't already pathing it!
-			if(walk_list.len && !astarpathing)
-				spawn(1)
+		//We have a path! We aren't already pathing it!
+		if(walk_list.len && !astarpathing)
+			spawn(1)
 
-					//Do the path!
-					var/result = WalkPath(target_thing = target_mob, target_dist = get_to)
+				//Do the path!
+				var/result = WalkPath(target_thing = target_mob, target_dist = get_to)
 
-					//WalkPath failed, either interrupted for recalc, or something else
-					if(!result)
-						return
+				//WalkPath failed, either interrupted for recalc, or something else
+				if(!result)
+					return
 
-					//WalkPath either got close enough or we ran out of path
-					if(result)
-						spawn(1)
-							MoveToTarget()
-
+				//WalkPath either got close enough or we ran out of path
+				else
+					spawn(1)
+						MoveToTarget()
 
 	//We can't see them, and we don't have a path we're trying to follow to find them
 	else if(!astarpathing)
@@ -677,37 +674,39 @@
 	return walk_list.len
 
 //Walk along our A* path, target_thing allows us to stop early if we're nearby
-/mob/living/simple_animal/proc/WalkPath(var/atom/target_thing,var/target_dist = 1,var/proc/steps_callback = null,var/every_steps = 4)
+/mob/living/simple_animal/proc/WalkPath(var/atom/target_thing, var/target_dist = 1, var/proc/steps_callback = null, var/every_steps = 4)
 	world.log << "SA: WalkPath() (steps:[walk_list.len])"
 	if(!walk_list || !walk_list.len)
 		return
 
-		astarpathing = 1
-		var/step_count = 0
-		while(walk_list.len)
-			//We're supposed to stop
-			if(!astarpathing && !stat && !buckled && !weakened && !stunned)
-				return 0
-
-			//Take a step, recalc distance
-			MoveOnce()
-			step_count++
-
-			//If we have a particular target we care about, look for them
-			if(target_thing && (get_dist(src,target_thing) <= target_dist))
-				return target_thing
-
-			//If we have a callback
-			if(steps_callback && (step_count >= every_steps))
-				call(steps_callback)()
-
-			//And wait for the time to our next step
-			sleep(move_to_delay)
-
+	astarpathing = 1
+	var/step_count = 0
+	while(1)
+		//We're supposed to stop
+		if(!astarpathing && !stat && !buckled && !weakened && !stunned)
+			astarpathing = 0
+			world.log << "SA: WalkPath() was interrupted"
+			return 0
 		//Finished the path
-		astarpathing = 0
-		return 1
-		world.log << "SA: WalkPath() exited"
+		if(!walk_list.len)
+			astarpathing = 0
+			world.log << "SA: WalkPath() exited naturally"
+			return 1
+
+		//Take a step, recalc distance
+		MoveOnce()
+		step_count++
+
+		//If we have a particular target we care about, look for them
+		if(target_thing && (get_dist(src,target_thing) <= target_dist))
+			return target_thing
+
+		//If we have a callback
+		if(steps_callback && (step_count >= every_steps))
+			call(steps_callback)()
+
+		//And wait for the time to our next step
+		sleep(move_to_delay)
 
 //Take one step along a path
 /mob/living/simple_animal/proc/MoveOnce()
@@ -835,8 +834,8 @@
 
 //We can't see the target
 /mob/living/simple_animal/proc/LoseTarget()
-	handle_stance(STANCE_IDLE)
 	target_mob = null
+	handle_stance(STANCE_IDLE)
 	GiveUpMoving()
 
 //Target is no longer valid
