@@ -1,3 +1,8 @@
+#define ai_log(M,V)	if(debug_ai) ai_log_output(M,V)
+
+//Talky things
+#define try_say(L) if(L.len) say(pick(L))
+
 /mob/living/simple_animal
 	name = "animal"
 	icon = 'icons/mob/animal.dmi'
@@ -27,13 +32,15 @@
 	var/list/emote_see = list()		// Unlike speak_emote, the list of things in this variable only show by themselves with no spoken text. IE: Ian barks, Ian yaps
 	var/list/say_understood = list()// List of things to say when accepting an order
 	var/list/say_cannot = list()	// List of things to say when they cannot comply
-	var/list/say_target = list()	// List of things to say when they find a target
+	var/list/say_maybe_target = list()// List of things to say when they spot something barely
+	var/list/say_got_target = list()// List of things to say when they engage a target
 	var/list/reactions = list() 	// List of "string" = "reaction" and things they hear will be searched for string.
 
 	//Mob movement settings
 	var/wander = 1					// Does the mob wander around when idle?
+	var/wander_distance = 3			// How far the mob will wander before going home (assuming they are allowed to do that)
+	var/returns_home = 1			// Mob knows how to return to wherever it started
 	var/turns_per_move = 1			// How many life() cycles to wait between each move?
-	var/stop_automated_movement = 0 // Use this to temporarely stop random movement or to if you write special movement code for animals.
 	var/stop_when_pulled = 1 		// When set to 1 this stops the animal from moving when someone is pulling it.
 	var/obstacles = list()			// Things this mob refuses to move through
 	var/speed = 0					// Higher speed is slower, negative speed is faster.
@@ -79,10 +86,10 @@
 	//Hostility settings
 	var/hostile = 0					// Do I even attack?
 	var/retaliate = 0				// I respond to damage against specific targets.
-	var/view_range = 12				// Scan for targets in this range.
+	var/view_range = 7				// Scan for targets in this range.
 	var/attack_same = 0				// Do I attack members of my own faction?
 	var/cooperative = 0				// Do I ask allies to help me?
-	var/assist_distance = 20		// How far will I go to assist my comrades?
+	var/assist_distance = 25		// How far will I go to assist my comrades?
 	var/supernatural = 0			// If the mob is supernatural (used in null-rod stuff for banishing?)
 	var/grab_resist = 75			// Chance of me resisting a grab attempt.
 
@@ -93,6 +100,11 @@
 	var/projectiletype				// The projectiles I shoot
 	var/projectilesound				// The sound I make when I do it
 	var/casingtype					// What to make the hugely laggy casings pile out of
+
+	//Special attacks
+	var/spattack_prob = 0			// Chance of the mob doing a special attack (0 for never)
+	var/spattack_min_range = 0		// Min range to perform the special attacks from
+	var/spattack_max_range = 0		// Max range to perform special attacks from
 
 	//Attack movement settings
 	var/run_at_them = 0				// Don't use A* pathfinding, use walk_to
@@ -111,25 +123,28 @@
 								)
 
 	//Scary debug things
-	var/path_display = 1			// Will display the path in green when pathing
+	var/debug_ai = 0				// Logging level for this mob (1,2,3)
+	var/path_display = 0			// Will display the path in green when pathing
 	var/path_icon = 'icons/misc/debug_group.dmi' // What icon to use for the overlay
 	var/path_icon_state = "red"		// What state to use for the overlay
 	var/icon/path_overlay			// A reference to restart
 
-	////// These are used for IPC so don't edit them manually //////
+	////// These are used for inter-proc communications so don't edit them manually //////
 	var/stance = STANCE_IDLE		// Used to determine behavior
-	var/turns_since_move = 0 		// A counter for how many life() cycles since move
+	var/stop_automated_movement = 0 // Use this to temporarely stop random movement or to if you write special movement code for animals.
+	var/lifes_since_move = 0 		// A counter for how many life() cycles since move
 	var/shuttletarget = null		// Shuttle's here, time to get to it
 	var/enroute = 0					// If the shuttle is en-route
 	var/purge = 0					// A counter used for null-rod stuff
 	var/mob/living/target_mob		// Who I'm trying to attack
+	var/mob/living/follow_mob		// Who I'm recruited by
 	var/mob/living/list/friends = list() // People who are immune to my wrath, for now
 	var/mob/living/simple_animal/list/faction_friends = list() // Other simple mobs I am friends with
 	var/turf/list/walk_list = list()// List of turfs to walk through to get somewhere
 	var/astarpathing = 0			// Am I currently pathing to somewhere?
 	var/stance_changed = 0			// When our stance last changed (world.time)
-	var/following = 0				// Are we following a PC around?
 	var/last_target_time = 0		// When we last set our target, to prevent juggles
+	var/last_follow_time = 0		// When did we last get asked to follow someone?
 	var/last_helpask_time = 0		// When did we last call for help?
 	////// ////// //////
 
@@ -152,6 +167,7 @@
 		else
 			faction_friends |= src
 
+//Client attached
 /mob/living/simple_animal/Login()
 	if(src && src.client)
 		src.client.screen = list()
@@ -161,6 +177,7 @@
 		src.client << "<span class='notice'>Mob AI disabled while you are controlling the mob.</span>"
 	..()
 
+//Client detatched
 /mob/living/simple_animal/Logout()
 	if(src && !src.client)
 		spawn(15 SECONDS) //15 seconds to get back into the mob before it goes wild
@@ -168,6 +185,12 @@
 				ai_inactive = initial(ai_inactive) //So if they never have an AI, they stay that way.
 	..()
 
+//For debug purposes!
+/mob/living/simple_animal/proc/ai_log_output(var/msg = "missing message", var/ver = 1)
+	if(ver <= debug_ai)
+		log_debug("SA-AI: ([src]:[x],[y],[z])(@[world.time]): [msg] ")
+
+//Should we be dead?
 /mob/living/simple_animal/updatehealth()
 	//Alive, becoming dead
 	if((stat < DEAD) && (health <= 0))
@@ -219,17 +242,17 @@
 	//Movement
 	if(!ai_inactive && !stop_automated_movement && wander && !anchored) //Allowed to move?
 		if(isturf(src.loc) && !resting && !buckled && canmove) //Physically capable of moving?
-			turns_since_move++ //Increment turns since move (turns are life() cycles)
-			if(turns_since_move >= turns_per_move)
+			lifes_since_move++ //Increment turns since move (turns are life() cycles)
+			if(lifes_since_move >= turns_per_move)
 				if(!(stop_when_pulled && pulledby)) //Some animals don't move when pulled
 					var/moving_to = 0 // otherwise it always picks 4, fuck if I know.   Did I mention fuck BYOND
 					moving_to = pick(cardinal)
 					dir = moving_to			//How about we turn them the direction they are moving, yay.
 					Move(get_step(src,moving_to))
-					turns_since_move = 0
+					lifes_since_move = 0
 
 	//Speaking
-	if(!ai_inactive && speak_chance)
+	if(!ai_inactive && speak_chance && stance == STANCE_IDLE)
 		if(rand(0,200) < speak_chance)
 			if(speak && speak.len)
 				if((emote_hear && emote_hear.len) || (emote_see && emote_see.len))
@@ -327,10 +350,14 @@
 	return 1
 
 /mob/living/simple_animal/proc/handle_stance(var/new_stance)
+	if(ai_inactive)
+		stance = STANCE_IDLE
+		return
+
 	if(new_stance)
 		stance = new_stance
 		stance_changed = world.time
-		world.log << "SA: handle_stance() [src] changing to [new_stance]"
+		ai_log("handle_stance() changing to [new_stance]",2)
 
 	switch(stance)
 		if(STANCE_IDLE)
@@ -338,17 +365,21 @@
 
 			//Yes I'm breaking this into two if()'s for ease of reading
 			//If we ARE ALLOWED TO
-			if(!run_at_them && home_turf && !astarpathing && (world.time - stance_changed) > 10 SECONDS)
-				//If we should RIGHT NOW
-				if(!following && !stop_automated_movement && (get_dist(src,home_turf) > world.view))
+			if(returns_home && home_turf && !astarpathing && (world.time - stance_changed) > 10 SECONDS)
+				if(get_dist(src,home_turf) > wander_distance)
 					move_to_delay = initial(move_to_delay)*2 //Walk back.
 					GoHome()
+				else
+					stop_automated_movement = 0
 
 			//Search for targets while idle
 			if(hostile)
 				FindTarget()
+		if(STANCE_FOLLOW)
+			FollowTarget()
+			if(hostile)
+				FindTarget()
 		if(STANCE_ATTACK)
-			move_to_delay = initial(move_to_delay)
 			RequestHelp()
 			MoveToTarget()
 		if(STANCE_ATTACKING)
@@ -374,7 +405,7 @@
 /mob/living/simple_animal/bullet_act(var/obj/item/projectile/Proj)
 	if(!Proj)
 		return
-
+	ai_log("bullet_act() I was shot by: [Proj.firer]",2)
 	if(Proj.taser_effect)
 		stun_effect_act(0, Proj.agony)
 
@@ -420,14 +451,14 @@
 
 			M.visible_message("<span class='warning'>[M] has grabbed [src] passively!</span>")
 			M.do_attack_animation(src)
-
+			ai_log("attack_hand() I was grabbed by: [M]",2)
 			react_to_attack(M)
 
 		if(I_HURT)
 			adjustBruteLoss(harm_intent_damage)
 			M.visible_message("<span class='warning'>[M] [response_harm] \the [src]!</span>")
 			M.do_attack_animation(src)
-
+			ai_log("attack_hand() I was hit by: [M]",2)
 			react_to_attack(M)
 
 	return
@@ -455,6 +486,7 @@
 			visible_message("<span class='notice'>[user] gently taps [src] with \the [O].</span>")
 		else
 			O.attack(src, user, user.zone_sel.selecting)
+			ai_log("attackby() I was weapon'd by: [user]",2)
 			react_to_attack(user)
 
 /mob/living/simple_animal/hit_with_weapon(obj/item/O, mob/living/user, var/effective_force, var/hit_zone)
@@ -471,6 +503,7 @@
 		damage *= 2
 		purge = 3
 	adjustBruteLoss(damage)
+	ai_log("hit_with_weapon() I was h_w_weapon'd by: [user]",2)
 	react_to_attack(user)
 
 	return 0
@@ -519,7 +552,7 @@
 	health = Clamp(health - damage, 0, maxHealth)
 
 /mob/living/simple_animal/proc/SA_attackable(target_mob)
-	world.log << "SA: SA_attackable([target_mob]) on [src]"
+	ai_log("SA_attackable([target_mob])",3)
 	if (isliving(target_mob))
 		var/mob/living/L = target_mob
 		if(!L.stat)
@@ -528,7 +561,7 @@
 		var/obj/mecha/M = target_mob
 		if (M.occupant)
 			return 1
-	world.log << "SA: SA_attackable([target_mob]) on [src]: no"
+	ai_log("SA_attackable([target_mob]): no",3)
 	return 0
 
 /mob/living/simple_animal/say(var/message)
@@ -574,22 +607,44 @@
 
 //We got hit! Consider hitting them back!
 /mob/living/simple_animal/proc/react_to_attack(var/mob/M)
+	ai_log("react_to_attack([M])",1)
 	GiveUpMoving()
 	if(hostile || retaliate)
-		set_target(M)
-		handle_stance(STANCE_ATTACK)
+		if(set_target(M))
+			handle_stance(STANCE_ATTACK)
 
 /mob/living/simple_animal/proc/set_target(var/mob/M)
-	if(!M || world.time - last_target_time < 4 SECONDS)
-		return
+	ai_log("SetTarget([M])",2)
+	if(!M || (world.time - last_target_time < 4 SECONDS) && target_mob)
+		ai_log("SetTarget() can't set it again so soon",3)
+		return 0
 
-	target_mob = M
-	last_target_time = world.time
+	try_say(say_maybe_target)
+	dir = get_dir(src,M)
+
+	sleep(1 SECOND) //For realism
+
+	if(M in ListTargets(view_range))
+		try_say(say_got_target)
+		target_mob = M
+		last_target_time = world.time
+		return 1
+
+	return 0
+
+/mob/living/simple_animal/proc/set_follow(var/mob/M)
+	ai_log("SetFollow([M])",2)
+	if(!M || (world.time - last_target_time < 4 SECONDS) && follow_mob)
+		ai_log("SetFollow() can't set it again so soon",3)
+		return 0
+
+	follow_mob = M
+	last_follow_time = world.time
+	return 1
 
 //Scan surroundings for a valid target
 /mob/living/simple_animal/proc/FindTarget()
 	var/atom/T = null
-	stop_automated_movement = 0
 	for(var/atom/A in ListTargets(view_range))
 
 		if(A == src)
@@ -622,11 +677,9 @@
 
 	//You found one!
 	if(T)
-		world.log << "SA: FindTarget() [src] found [T]!"
-		set_target(T)
-		handle_stance(STANCE_ATTACK)
-		if(say_target.len)
-			say(pick(say_target))
+		ai_log("FindTarget() found [T]!",1)
+		if(set_target(T))
+			handle_stance(STANCE_ATTACK)
 
 /mob/living/simple_animal/proc/Found(var/atom/A)
 	return
@@ -636,50 +689,42 @@
 	if(!cooperative || ((world.time - last_helpask_time) < 10 SECONDS))
 		return
 
-	world.log << "SA: RequestHelp() [src] from [faction_friends.len]"
+	ai_log("RequestHelp() to [faction_friends.len] friends",2)
 	last_helpask_time = world.time
 	for(var/mob/living/simple_animal/F in faction_friends)
 		if(F == src) continue
 		if(get_dist(src,F) <= F.assist_distance)
 			spawn(1)
-				world.log << "SA: RequestHelp() [src] from [F]"
+				ai_log("RequestHelp() to [F]",3)
 				F.HelpRequested(src)
 
 //Someone wants help?
 /mob/living/simple_animal/proc/HelpRequested(var/mob/living/simple_animal/F)
 	if(!stance == STANCE_IDLE) //WE'RE BUSY, GO AWAY
-		world.log << "SA: HelpRequested() [src] for [F] but we're busy"
+		ai_log("HelpRequested() by [F] but we're busy",2)
 		return
 	if(get_dist(src,F) <= 1)
-		world.log << "SA: HelpRequested() [src] for [F] but we're already here"
+		ai_log("HelpRequested() by [F] but we're already here",2)
 		return
 
-	//Stop what we're doin' if we're goin' home or somethin'.
-	ForgetPath()
-
-	if(GetPath(get_turf(F),1))
-		world.log << "SA: HelpRequested() [src] for [F] and going to help"
-		move_to_delay = initial(move_to_delay) //Normal speed
-		spawn(1)
-			WalkPath(target_thing = F, target_dist = 1)
-	else
-		world.log << "SA: HelpRequested() [src] for [F] asked for help and can't get there"
-		return //IDK how to get there sorry
+	if(set_follow(F))
+		handle_stance(STANCE_FOLLOW)
 
 //Move to a target (or near if we're ranged)
 /mob/living/simple_animal/proc/MoveToTarget()
 	if(incapacitated(INCAPACITATION_DISABLED))
-		world.log << "SA: MoveToTarget() [src] Bailing because we're disabled"
+		ai_log("MoveToTarget() Bailing because we're disabled",2)
 		return
 
 	//If we were chasing someone and we can't anymore, give up.
 	if(!target_mob || !SA_attackable(target_mob))
-		world.log << "SA: MoveToTarget() [src] Losing target at top."
+		ai_log("MoveToTarget() Losing target at top",2)
 		LoseTarget()
 		return
 
 	//Don't wander
 	stop_automated_movement = 1
+	move_to_delay = initial(move_to_delay)
 
 	//We recompute our path every time we're called if we can still see them
 	if(target_mob in ListTargets(view_range))
@@ -691,39 +736,39 @@
 		//Find out where we're getting to
 		var/get_to = ranged ? shoot_range-1 : 1 //Shoot range -1 just because we don't want to constantly get kited
 		var/distance = get_dist(src,target_mob)
-		world.log << "SA: MoveToTarget() [src] [get_to] [distance]"
+		ai_log("MoveToTarget() [src] [get_to] [distance]",2)
 
 		//We're here!
 		if(distance <= get_to)
-			world.log << "SA: MoveToTarget() [src] attack range"
+			ai_log("MoveToTarget() [src] attack range",2)
 			handle_stance(STANCE_ATTACKING)
 			return
 
 		//We're just setting out, making a new path, or we can't path with A*
 		if(!walk_list.len)
-			world.log << "SA: MoveToTarget() [src] pathing"
+			ai_log("SA: MoveToTarget() pathing to [target_mob]",2)
 
 			//GetPath failed for whatever reason, just smash into things towards them
 			if(run_at_them || !GetPath(get_turf(target_mob),get_to))
 
 				//We try the built-in way to stay close
 				walk_to(src, target_mob, get_to, move_to_delay)
-				world.log << "SA: MoveToTarget() [src] walk_to([src],[target_mob],[get_to],[move_to_delay])"
+				ai_log("MoveToTarget() walk_to([src],[target_mob],[get_to],[move_to_delay])",3)
 
 				//Break shit in their direction! LEME SMAHSH
 				var/dir_to_mob = get_dir(src,target_mob)
 				dir = dir_to_mob
 				DestroySurroundings(dir_to_mob)
-				world.log << "SA: MoveToTarget() [src] DestroySurroundings([get_dir(src,target_mob)])"
+				ai_log("MoveToTarget() DestroySurroundings([get_dir(src,target_mob)])",3)
 
 		//We have a path! We aren't already pathing it!
-		if(walk_list.len && !astarpathing)
-			world.log << "SA: MoveToTarget() [src] spawn(1)"
+		if(!astarpathing && walk_list.len)
+			ai_log("MoveToTarget() going to start a path",2)
 			spawn(1)
 
 				//Do the path!
 				var/result = WalkPath(target_thing = target_mob, target_dist = get_to)
-				world.log << "SA: MoveToTarget() [src] WalkPath [result]"
+				ai_log("MoveToTarget() WalkPath r:[result]",2)
 
 				//WalkPath failed, either interrupted for recalc, or something else
 				if(!result)
@@ -732,18 +777,61 @@
 				//WalkPath either got close enough or we ran out of path
 				else
 					spawn(1)
+						ai_log("MoveToTarget() resetting",2)
 						MoveToTarget()
 
 	//We can't see them, and we don't have a path we're trying to follow to find them
 	else if(!astarpathing)
-		world.log << "SA: MoveToTarget() [src] LoseTarget()"
+		ai_log("MoveToTarget() Losing target at bottom",2)
 		LoseTarget() //Just forget it.
+
+//Follow a target (and don't attempt to murder it horribly)
+/mob/living/simple_animal/proc/FollowTarget()
+	ai_log("FollowTarget() [follow_mob]",1)
+	//If we were chasing someone and we can't anymore, give up.
+	if(!follow_mob || follow_mob.stat)
+		ai_log("FollowTarget() Losing follow at top",2)
+		LoseFollow()
+		return
+
+	if(incapacitated(INCAPACITATION_DISABLED))
+		ai_log("FollowTarget() Bailing because we're disabled",2)
+		return
+
+	if((get_dist(src,follow_mob) <= 2))
+		ai_log("FollowTarget() Already at target",2)
+		return
+
+	move_to_delay = initial(move_to_delay)
+	var/start_distance = get_dist(src,follow_mob)
+
+	//Bad pathing
+	if(run_at_them)
+		walk_to(src, follow_mob, 2, move_to_delay)
+		ai_log("FollowTarget() walk_to([src],[target_mob],2,[move_to_delay])",3)
+		spawn(3 SECONDS)
+			if(src && follow_mob && (stance == STANCE_FOLLOW) && (get_dist(src,follow_mob) >= start_distance))
+				ai_log("FollowTarget() walk_to not making headway, giving up",3)
+				LoseFollow()
+
+	//Good pathing
+	else
+		GetPath(get_turf(follow_mob),2)
+		if(!astarpathing && walk_list.len)
+			spawn(1)
+				ai_log("FollowTarget() A* path getting underway",2)
+				//Do the path!
+				var/result = WalkPath(target_thing = follow_mob, target_dist = 2)
+				ai_log("FollowTarget() WalkPath r:[result]",3)
+
+		else
+			ai_log("FollowTarget() GetPath can't path, giving up",3)
+			LoseFollow()
 
 //A* now, try to a path to a target
 /mob/living/simple_animal/proc/GetPath(var/turf/target,var/get_to = 1,var/max_distance = world.view*6)
-	if(path_display)
-		world.log << "SA: GetPath([target],[get_to],[max_distance])"
-	walk_list.Cut()
+	ai_log("GetPath([target],[get_to],[max_distance])",2)
+	ForgetPath()
 	var/list/new_path = AStar(get_turf(loc), target, /turf/proc/CardinalTurfsWithAccess, /turf/proc/Distance, min_target_dist = get_to, max_node_depth = max_distance, id = myid, exclude = obstacles)
 
 	if(new_path && new_path.len)
@@ -758,7 +846,7 @@
 
 //Walk along our A* path, target_thing allows us to stop early if we're nearby
 /mob/living/simple_animal/proc/WalkPath(var/atom/target_thing, var/target_dist = 1, var/proc/steps_callback = null, var/every_steps = 4)
-	world.log << "SA: WalkPath() [src] (steps:[walk_list.len])"
+	ai_log("WalkPath() (steps:[walk_list.len])",2)
 	if(!walk_list || !walk_list.len)
 		return
 
@@ -769,34 +857,35 @@
 		//We're supposed to stop
 		if(!astarpathing || incapacitated(INCAPACITATION_DISABLED))
 			astarpathing = 0
-			world.log << "SA: WalkPath() [src] was interrupted"
+			ai_log("WalkPath() was interrupted",2)
 			return 0
 		//Finished the path
 		if(!walk_list.len)
 			astarpathing = 0
-			world.log << "SA: WalkPath() [src] exited naturally"
+			ai_log("WalkPath() exited naturally",2)
 			return 1
 		if(failed_steps >= 3)
 			astarpathing = 0
-			world.log << "SA: WalkPath() [src] failed too many steps"
+			ai_log("WalkPath() failed too many steps",2)
 			return 0
 
 		//Take a step
 		if(!MoveOnce())
-			world.log << "SA: WalkPath() [src] failed a step"
+			ai_log("WalkPath() failed a step",3)
 			failed_steps++
 		else
+			ai_log("WalkPath() took a step",3)
 			failed_steps = 0
 			step_count++
 
 		//If we have a particular target we care about, look for them
 		if(target_thing && (get_dist(src,target_thing) <= target_dist))
-			world.log << "SA: WalkPath() [src] returning due to proximity"
+			ai_log("WalkPath() returning due to proximity",2)
 			return target_thing
 
 		//If we have a callback
 		if(steps_callback && (step_count >= every_steps))
-			world.log << "SA: WalkPath() [src] doing callback"
+			ai_log("WalkPath() doing callback",3)
 			call(steps_callback)()
 
 		//And wait for the time to our next step
@@ -813,30 +902,26 @@
 
 	step_towards(src, src.walk_list[1])
 	if(src.loc != src.walk_list[1])
+		ai_log("MoveOnce() step_towards returning 0",3)
 		return 0
-		world.log << "SA: MoveOnce() [src] step_towards returning 0"
 	else
 		walk_list -= src.walk_list[1]
+		ai_log("MoveOnce() step_towards returning 1",3)
 		return 1
-		world.log << "SA: MoveOnce() [src] step_towards returning 1"
 
 //Forget the path entirely
 /mob/living/simple_animal/proc/ForgetPath()
+	ai_log("ForgetPath()",2)
 	if(path_display)
 		for(var/turf/T in walk_list)
 			T.overlays -= path_overlay
-	world.log << "SA: ForgetPath() [src]"
 	astarpathing = 0
 	walk_list.Cut()
 
 //Giving up on moving
 /mob/living/simple_animal/proc/GiveUpMoving()
-	world.log << "SA: GiveUpMoving() [src]"
-	if(path_display)
-		for(var/turf/T in walk_list)
-			T.overlays -= path_overlay
-	walk_list.Cut()
-	astarpathing = 0
+	ai_log("GiveUpMoving()",1)
+	ForgetPath()
 	walk(src, 0)
 	stop_automated_movement = 0
 
@@ -844,14 +929,14 @@
 /mob/living/simple_animal/proc/GoHome()
 	if(!home_turf || run_at_them) return
 	if(astarpathing) ForgetPath()
-	var/close_enough = 4
+	ai_log("GoHome()",1)
+	var/close_enough = 2
 	var/look_in = 250
-	world.log << "SA: GoHome() [src]"
 	if(GetPath(home_turf,close_enough,look_in))
 		stop_automated_movement = 1
 		spawn(1)
 			if(WalkPath()) //If we made it without interruption
-				world.log << "SA: GoHome() [src] got home"
+				ai_log("GoHome() got home",2)
 				GiveUpMoving() //Go back to wandering
 
 //Get into attack mode on a target
@@ -864,21 +949,27 @@
 		LostTarget()
 		return 0
 
-	world.log << "SA: AttackTarget() [src] trying to attack"
+	ai_log("AttackTarget() vs. [target_mob]",1)
 	var/distance = get_dist(src, target_mob)
+
+	//Hadoooooken!
+	if(prob(spattack_prob) && (distance >= spattack_min_range) && (distance <= spattack_max_range))
+		ai_log("AttackTarget() special",3)
+		SpecialAtkTarget()
+		return 1
 	//AAAAH!
 	if(distance <= 1)
-		world.log << "SA: AttackTarget() [src] melee"
+		ai_log("AttackTarget() melee",3)
 		PunchTarget()
 		return 1
 	//Open fire!
 	else if(ranged && (distance <= shoot_range))
-		world.log << "SA: AttackTarget() [src] ranged"
+		ai_log("AttackTarget() ranged",3)
 		ShootTarget(target_mob)
 		return 1
 	//They ran away!
 	else
-		world.log << "SA: AttackTarget() [src] S_A"
+		ai_log("AttackTarget() out of range!",3)
 		handle_stance(STANCE_ATTACK)
 		return 0
 
@@ -896,7 +987,7 @@
 		return M
 
 //The actual top-level ranged attack proc
-/mob/living/simple_animal/proc/ShootTarget(target_mob)
+/mob/living/simple_animal/proc/ShootTarget()
 	var/target = target_mob
 	visible_message("\red <b>[src]</b> fires at [target]!", 1)
 
@@ -921,6 +1012,10 @@
 
 	return
 
+//Special attacks, like grenades or blinding spit or whatever
+/mob/living/simple_animal/proc/SpecialAtkTarget()
+	return
+
 //Shoot a bullet at someone
 /mob/living/simple_animal/proc/Shoot(var/target, var/start, var/user, var/bullet = 0)
 	if(target == start)
@@ -938,13 +1033,20 @@
 
 //We can't see the target
 /mob/living/simple_animal/proc/LoseTarget()
-	world.log << "SA: LoseTarget() [src]"
+	ai_log("LoseTarget() [target_mob]",2)
 	target_mob = null
 	handle_stance(STANCE_IDLE)
 	GiveUpMoving()
 
-//Target is no longer valid
+//Target is no longer valid (?)
 /mob/living/simple_animal/proc/LostTarget()
+	handle_stance(STANCE_IDLE)
+	GiveUpMoving()
+
+//Forget a follow mode
+/mob/living/simple_animal/proc/LoseFollow()
+	ai_log("LoseFollow() [target_mob]",2)
+	follow_mob = null
 	handle_stance(STANCE_IDLE)
 	GiveUpMoving()
 
@@ -963,22 +1065,22 @@
 	if(!direction)
 		direction = pick(cardinal) //FLAIL WILDLY
 
-	world.log << "SA: DestroySurroundings([direction]) [src]"
+	ai_log("DestroySurroundings([direction])",3)
 	for(var/obj/structure/window/obstacle in get_step(src, direction))
 		if(obstacle.dir == reverse_dir[dir]) // So that windows get smashed in the right order
-			world.log << "SA: DestroySurroundings() directional window hit"
+			ai_log("DestroySurroundings() directional window hit",3)
 			obstacle.attack_generic(src,rand(melee_damage_lower,melee_damage_upper),attacktext)
 			return
 
 	var/obj/structure/obstacle = locate(/obj/structure, get_step(src, direction))
 	if(istype(obstacle, /obj/structure/window) || istype(obstacle, /obj/structure/closet) || istype(obstacle, /obj/structure/table) || istype(obstacle, /obj/structure/grille))
-		world.log << "SA: DestroySurroundings() [src] generic structure hit [obstacle]"
+		ai_log("DestroySurroundings() generic structure hit [obstacle]",3)
 		obstacle.attack_generic(src,rand(melee_damage_lower,melee_damage_upper),attacktext)
 		return
 
 	var/obj/machinery/door/baddoor = locate(/obj/machinery/door, get_step(src, direction))
 	if(istype(baddoor) && baddoor.density)
-		world.log << "SA: DestroySurroundings() [src] door hit [baddoor]"
+		ai_log("DestroySurroundings() door hit [baddoor]",3)
 		baddoor.attack_generic(src,rand(melee_damage_lower,melee_damage_upper),attacktext)
 		return
 
