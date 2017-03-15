@@ -34,6 +34,7 @@
 	environment_smash = 1
 	faction = "syndicate"
 	status_flags = CANPUSH
+	cooperative = 1
 
 /mob/living/simple_animal/hostile/syndicate/death()
 	..()
