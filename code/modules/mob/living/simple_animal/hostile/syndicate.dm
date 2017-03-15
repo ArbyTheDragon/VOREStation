@@ -5,7 +5,7 @@
 	icon_living = "syndicate"
 	icon_dead = "syndicate_dead"
 	icon_gib = "syndicate_gib"
-	speak_chance = 0
+	speak_chance = 5
 	turns_per_move = 5
 	response_help = "pokes"
 	response_disarm = "shoves"
@@ -35,6 +35,20 @@
 	faction = "syndicate"
 	status_flags = CANPUSH
 	cooperative = 1
+
+	speak = list("Fuckin' NT, man.",
+				"When are we gonna get out of this chicken-shit outfit?",
+				"Wish I had better equipment...",
+				"I knew I should have been a line chef...",
+				"Fuckin' helmet keeps fogging up.",
+				"Anyone else smell that?")
+	emote_hear = list("sniffs","coughs","taps his foot")
+	emote_see = list("looks around","checks his equipment")
+	say_understood = list()
+	say_cannot = list()
+	say_maybe_target = list("What's that?","Is someone there?","Is that...?","Hmm?")
+	say_got_target = list("Engaging!","Contact!","Target spotted!","Found one!")
+	reactions = list()
 
 /mob/living/simple_animal/hostile/syndicate/death()
 	..()

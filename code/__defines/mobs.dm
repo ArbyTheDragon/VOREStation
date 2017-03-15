@@ -31,6 +31,7 @@
 #define STANCE_ATTACK    3
 #define STANCE_ATTACKING 4
 #define STANCE_TIRED     5
+#define STANCE_FOLLOW    6
 
 #define LEFT  1
 #define RIGHT 2
