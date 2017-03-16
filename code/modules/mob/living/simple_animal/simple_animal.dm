@@ -381,6 +381,7 @@
 			if(hostile)
 				FindTarget()
 		if(STANCE_FOLLOW)
+			annoyed = 15
 			FollowTarget()
 			if(hostile)
 				FindTarget()
@@ -626,11 +627,12 @@
 		ai_log("SetTarget() can't set it again so soon",3)
 		return 0
 
-	try_say(say_maybe_target)
-	dir = face_atom(M)
 	var/turf/seen = get_turf(M)
 
-	if(annoyed < 10)
+	if(investigates && (annoyed < 10))
+		try_say(say_maybe_target)
+		dir = face_atom(seen)
+		annoyed += 14
 		sleep(1 SECOND) //For realism
 
 	if(M in ListTargets(view_range))
@@ -639,7 +641,6 @@
 		last_target_time = world.time
 		return 1
 	else if(investigates)
-		annoyed += 14
 		spawn(1)
 			WanderTowards(seen)
 
