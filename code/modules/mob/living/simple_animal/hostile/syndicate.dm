@@ -35,6 +35,7 @@
 	faction = "syndicate"
 	status_flags = CANPUSH
 	cooperative = 1
+	investigates = 1
 
 	speak = list("Fuckin' NT, man.",
 				"When are we gonna get out of this chicken-shit outfit?",
