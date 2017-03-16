@@ -25,6 +25,7 @@
 
 	//Mob talking settings
 	universal_speak = 0				// Can all mobs in the entire universe understand this one?
+	var/language = null				// Text name of their language if they speak something other than galcom.
 	var/speak_chance = 0			// Probability that I talk (this is 'X in 200' chance since even 1/100 is pretty noisy)
 	var/reacts = 0					// Reacts to some things being said
 	var/list/speak = list()			// Things I might say if I talk
@@ -87,6 +88,7 @@
 	var/hostile = 0					// Do I even attack?
 	var/retaliate = 0				// I respond to damage against specific targets.
 	var/view_range = 7				// Scan for targets in this range.
+	var/investigates = 0			// Do I investigate if I saw someone briefly?
 	var/attack_same = 0				// Do I attack members of my own faction?
 	var/cooperative = 0				// Do I ask allies to help me?
 	var/assist_distance = 25		// How far will I go to assist my comrades?
@@ -146,6 +148,7 @@
 	var/last_target_time = 0		// When we last set our target, to prevent juggles
 	var/last_follow_time = 0		// When did we last get asked to follow someone?
 	var/last_helpask_time = 0		// When did we last call for help?
+	var/annoyed = 0					// Do people keep distract-kiting us?
 	////// ////// //////
 
 /mob/living/simple_animal/New()
@@ -154,6 +157,7 @@
 	home_turf = get_turf(src)
 	path_overlay = new(path_icon,path_icon_state)
 	move_to_delay = max(3,move_to_delay) //Protection against people coding things incorrectly and A* pathing 100% of the time
+	default_language = all_languages[language ? language : LANGUAGE_GALCOM]
 
 	if(cooperative)
 		var/mob/living/simple_animal/first_friend
@@ -362,6 +366,7 @@
 	switch(stance)
 		if(STANCE_IDLE)
 			target_mob = null
+			annoyed = max(0,annoyed--)
 
 			//Yes I'm breaking this into two if()'s for ease of reading
 			//If we ARE ALLOWED TO
@@ -380,9 +385,11 @@
 			if(hostile)
 				FindTarget()
 		if(STANCE_ATTACK)
+			annoyed = 50
 			RequestHelp()
 			MoveToTarget()
 		if(STANCE_ATTACKING)
+			annoyed = 50
 			AttackTarget()
 
 /mob/living/simple_animal/proc/handle_supernatural()
@@ -564,7 +571,7 @@
 	ai_log("SA_attackable([target_mob]): no",3)
 	return 0
 
-/mob/living/simple_animal/say(var/message)
+/mob/living/simple_animal/say(var/message,var/datum/language/language)
 	var/verb = "says"
 	if(speak_emote.len)
 		verb = pick(speak_emote)
@@ -620,15 +627,21 @@
 		return 0
 
 	try_say(say_maybe_target)
-	dir = get_dir(src,M)
+	dir = face_atom(M)
+	var/turf/seen = get_turf(M)
 
-	sleep(1 SECOND) //For realism
+	if(annoyed < 10)
+		sleep(1 SECOND) //For realism
 
 	if(M in ListTargets(view_range))
 		try_say(say_got_target)
 		target_mob = M
 		last_target_time = world.time
 		return 1
+	else if(investigates)
+		annoyed += 14
+		spawn(1)
+			WanderTowards(seen)
 
 	return 0
 
@@ -757,7 +770,7 @@
 
 				//Break shit in their direction! LEME SMAHSH
 				var/dir_to_mob = get_dir(src,target_mob)
-				dir = dir_to_mob
+				face_atom(target_mob)
 				DestroySurroundings(dir_to_mob)
 				ai_log("MoveToTarget() DestroySurroundings([get_dir(src,target_mob)])",3)
 
@@ -827,6 +840,23 @@
 		else
 			ai_log("FollowTarget() GetPath can't path, giving up",3)
 			LoseFollow()
+
+//Just try one time to go look at something. Don't really focus much on it.
+/mob/living/simple_animal/proc/WanderTowards(var/turf/T)
+	if(!T) return
+	ai_log("WanderTowards() [T.x],[T.y]",1)
+
+	stop_automated_movement = 1
+	GetPath(T,1)
+
+	if(run_at_them || !walk_list.len)
+		ai_log("WanderTowards() walk_to getting underway",2)
+		walk_to(src, T, 1, move_to_delay)
+	else
+		if(!astarpathing)
+			spawn(1)
+				ai_log("WanderTowards() A* path getting underway",2)
+				WalkPath(target_thing = T, target_dist = 1)
 
 //A* now, try to a path to a target
 /mob/living/simple_animal/proc/GetPath(var/turf/target,var/get_to = 1,var/max_distance = world.view*6)
