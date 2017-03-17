@@ -1,19 +1,16 @@
-/mob/living/simple_animal/hostile/vore/large/dragon
+/mob/living/simple_animal/hostile/large/dragon
 	name = "phoron dragon"
 	desc = "Here to pillage stations and kidnap princesses, and there probably aren't any princesses."
 	icon_dead = "reddragon-dead"
 	icon_living = "reddragon"
 	icon_state = "reddragon"
+
+	faction = "dragon"
 	maxHealth = 500 // Boss
 	health = 500
-	meat_type = /obj/item/weapon/reagent_containers/food/snacks/carpmeat
+
 	melee_damage_lower = 10
 	melee_damage_upper = 60
-	old_y = 0
-	pixel_y = 0
-	capacity = 2
-	faction = "dragon"
-	escapechance = 5
 
 	//Space dragons aren't affected by atmos.
 	min_oxy = 0
@@ -26,6 +23,11 @@
 	max_n2 = 0
 	minbodytemp = 0
 
+	meat_type = /obj/item/weapon/reagent_containers/food/snacks/carpmeat
+
+	old_y = 0
+	pixel_y = 0
+
 /mob/living/simple_animal/hostile/vore/large/dragon/Process_Spacemove(var/check_drift = 0)
 	return 1	//No drifting in space for space dragons!
 
@@ -33,3 +35,8 @@
 	. = ..()
 	if(.)
 		custom_emote(1,"snaps at [.]")
+
+/mob/living/simple_animal/hostile/large/dragon/vore
+	vore_active = 1
+	vore_capacity = 2
+	vore_escape_chance = 5
