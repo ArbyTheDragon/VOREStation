@@ -1,7 +1,7 @@
 #define ai_log(M,V)	if(debug_ai) ai_log_output(M,V)
 
 //Talky things
-#define try_say(L) if(L.len) say(pick(L))
+#define try_say_list(L) if(L.len) say(pick(L))
 
 /mob/living/simple_animal
 	name = "animal"
@@ -25,7 +25,7 @@
 
 	//Mob talking settings
 	universal_speak = 0				// Can all mobs in the entire universe understand this one?
-	var/language = null				// Text name of their language if they speak something other than galcom.
+	var/has_langs = list(LANGUAGE_GALCOM)// Text name of their language if they speak something other than galcom. They speak the first one.
 	var/speak_chance = 0			// Probability that I talk (this is 'X in 200' chance since even 1/100 is pretty noisy)
 	var/reacts = 0					// Reacts to some things being said
 	var/list/speak = list()			// Things I might say if I talk
@@ -40,9 +40,10 @@
 	//Mob movement settings
 	var/wander = 1					// Does the mob wander around when idle?
 	var/wander_distance = 3			// How far the mob will wander before going home (assuming they are allowed to do that)
-	var/returns_home = 1			// Mob knows how to return to wherever it started
+	var/returns_home = 0			// Mob knows how to return to wherever it started
 	var/turns_per_move = 1			// How many life() cycles to wait between each move?
 	var/stop_when_pulled = 1 		// When set to 1 this stops the animal from moving when someone is pulling it.
+	var/follow_dist = 2				// Distance the mob tries to follow a friend
 	var/obstacles = list()			// Things this mob refuses to move through
 	var/speed = 0					// Higher speed is slower, negative speed is faster.
 	var/obj/item/weapon/card/id/myid// An ID card if they have one to give them access to stuff.
@@ -55,7 +56,7 @@
 	var/harm_intent_damage = 3		// How much an unarmed harm click does to this mob.
 	var/meat_amount = 0				// How much meat to drop from this mob when butchered
 	var/obj/meat_type				// The meat object to drop
-	var/obj/list/loot_types			// The list of lootable objects to drop, with "/path = prob%" structure
+	var/list/loot_list = list()		// The list of lootable objects to drop, with "/path = prob%" structure
 	var/recruitable = 0				// Mob can be bossed around
 	var/recruit_cmd_str = "Hey,"	// The thing you prefix commands with when bossing them around
 
@@ -76,18 +77,11 @@
 	var/max_n2 = 0					// N2 max
 	var/unsuitable_atoms_damage = 2	// This damage is taken when atmos doesn't fit all the requirements above
 
-	//Mob attack settings
-	var/melee_damage_lower = 0		// Lower bound of randomized melee damage
-	var/melee_damage_upper = 0		// Upper bound of randomized melee damage
-	var/attacktext = "attacked"		// "You are [attacktext] by the mob!"
-	var/attack_sound = null			// Sound to play when I attack
-	var/friendly = "nuzzles"		// What mobs do to people when they aren't really hostile
-	var/environment_smash = 0		// How much environment damage do I do when I hit stuff?
-
 	//Hostility settings
 	var/hostile = 0					// Do I even attack?
 	var/retaliate = 0				// I respond to damage against specific targets.
 	var/view_range = 7				// Scan for targets in this range.
+	var/specific_targets = 0		// Only use Found() targets, ignore others.
 	var/investigates = 0			// Do I investigate if I saw someone briefly?
 	var/attack_same = 0				// Do I attack members of my own faction?
 	var/cooperative = 0				// Do I ask allies to help me?
@@ -99,9 +93,18 @@
 	var/ranged = 0					// Do I attack at range?
 	var/shoot_range = 7				// How far away do I start shooting from?
 	var/rapid = 0					// Three-round-burst fire mode
+	var/firing_lines = 0			// Avoids shooting allies
 	var/projectiletype				// The projectiles I shoot
 	var/projectilesound				// The sound I make when I do it
 	var/casingtype					// What to make the hugely laggy casings pile out of
+
+	//Mob melee settings
+	var/melee_damage_lower = 2		// Lower bound of randomized melee damage
+	var/melee_damage_upper = 6		// Upper bound of randomized melee damage
+	var/attacktext = "attacked"		// "You are [attacktext] by the mob!"
+	var/friendly = "nuzzles"		// What mobs do to people when they aren't really hostile
+	var/attack_sound = null			// Sound to play when I attack
+	var/environment_smash = 0		// How much environment damage do I do when I hit stuff?
 
 	//Special attacks
 	var/spattack_prob = 0			// Chance of the mob doing a special attack (0 for never)
@@ -109,9 +112,9 @@
 	var/spattack_max_range = 0		// Max range to perform special attacks from
 
 	//Attack movement settings
-	var/run_at_them = 0				// Don't use A* pathfinding, use walk_to
+	var/run_at_them = 1				// Don't use A* pathfinding, use walk_to
 	var/move_to_delay = 4			// Delay for the automated movement (deciseconds)
-	var/destroy_surroundings = 0	// Should I smash things to get to my target?
+	var/destroy_surroundings = 1	// Should I smash things to get to my target?
 
 	//Damage resistances
 	var/resistance = 0				// Damage reduction for all types
@@ -157,7 +160,11 @@
 	home_turf = get_turf(src)
 	path_overlay = new(path_icon,path_icon_state)
 	move_to_delay = max(3,move_to_delay) //Protection against people coding things incorrectly and A* pathing 100% of the time
-	default_language = all_languages[language ? language : LANGUAGE_GALCOM]
+
+	for(var/L in has_langs)
+		languages |= all_languages[L]
+	if(languages.len)
+		default_language = languages[1]
 
 	if(cooperative)
 		var/mob/living/simple_animal/first_friend
@@ -170,6 +177,20 @@
 			faction_friends |= src
 		else
 			faction_friends |= src
+
+/mob/living/simple_animal/Destroy()
+	home_turf = null
+	path_overlay = null
+	default_language = null
+	target_mob = null
+	follow_mob = null
+
+	if(faction_friends.len) //This list is shared amongst the faction
+		faction_friends -= src
+
+	friends.Cut() //This one is not
+	walk_list.Cut()
+	..()
 
 //Client attached
 /mob/living/simple_animal/Login()
@@ -235,7 +256,7 @@
 	//Health
 	updatehealth()
 	if(stat >= DEAD)
-		return
+		return 0
 
 	handle_stunned()
 	handle_weakened()
@@ -267,7 +288,7 @@
 						length += emote_see.len
 					var/randomValue = rand(1,length)
 					if(randomValue <= speak.len)
-						say(pick(speak))
+						try_say_list(speak)
 					else
 						randomValue -= speak.len
 						if(emote_see && randomValue <= emote_see.len)
@@ -275,7 +296,7 @@
 						else
 							audible_emote("[pick(emote_hear)].")
 				else
-					say(pick(speak))
+					try_say_list(speak)
 			else
 				if(!(emote_hear && emote_hear.len) && (emote_see && emote_see.len))
 					visible_emote("[pick(emote_see)].")
@@ -366,6 +387,7 @@
 	switch(stance)
 		if(STANCE_IDLE)
 			target_mob = null
+			a_intent = I_HELP
 			annoyed = max(0,annoyed--)
 
 			//Yes I'm breaking this into two if()'s for ease of reading
@@ -387,6 +409,7 @@
 				FindTarget()
 		if(STANCE_ATTACK)
 			annoyed = 50
+			a_intent = I_HURT
 			RequestHelp()
 			MoveToTarget()
 		if(STANCE_ATTACKING)
@@ -516,6 +539,11 @@
 
 	return 0
 
+/mob/living/simple_animal/hitby(atom/movable/AM)
+	..()
+	if(AM.thrower)
+		react_to_attack(AM.thrower)
+
 /mob/living/simple_animal/movement_delay()
 	var/tally = 0 //Incase I need to add stuff other than "speed" later
 
@@ -533,8 +561,28 @@
 	if(statpanel("Status") && show_stat_health)
 		stat(null, "Health: [round((health / maxHealth) * 100)]%")
 
+/mob/living/simple_animal/lay_down()
+	..()
+	if(resting && icon_rest)
+		icon_state = icon_rest
+	else
+		icon_state = icon_living
+
 /mob/living/simple_animal/death(gibbed, deathmessage = "dies!")
-	density = 0
+	density = 0 //We don't block even if we did before
+	walk(src, 0) //We stop any background-processing walks
+
+	if(faction_friends.len)
+		faction_friends -= src
+
+	if(loot_list.len) //Drop any loot
+		for(var/path in loot_list)
+			if(prob(loot_list[path]))
+				new path(get_turf(src))
+
+	spawn(3) //We'll update our icon in a sec
+		update_icon()
+
 	return ..(gibbed,deathmessage)
 
 /mob/living/simple_animal/ex_act(severity)
@@ -614,32 +662,35 @@
 	return
 
 //We got hit! Consider hitting them back!
-/mob/living/simple_animal/proc/react_to_attack(var/mob/M)
+/mob/living/simple_animal/proc/react_to_attack(var/mob/living/M)
+	if(stat || M == target_mob) return //Not if we're dead or already hitting them
+	if(M in friends || M.faction == faction) return //I'll overlook it THIS time...
 	ai_log("react_to_attack([M])",1)
-	GiveUpMoving()
-	if(hostile || retaliate)
-		if(set_target(M))
-			handle_stance(STANCE_ATTACK)
+	if(retaliate && set_target(M))
+		handle_stance(STANCE_ATTACK)
+		return M
+
+	return 0
 
 /mob/living/simple_animal/proc/set_target(var/mob/M)
 	ai_log("SetTarget([M])",2)
-	if(!M || (world.time - last_target_time < 4 SECONDS) && target_mob)
+	if(!M || (world.time - last_target_time < 5 SECONDS) && target_mob)
 		ai_log("SetTarget() can't set it again so soon",3)
 		return 0
 
 	var/turf/seen = get_turf(M)
 
 	if(investigates && (annoyed < 10))
-		try_say(say_maybe_target)
-		dir = face_atom(seen)
+		try_say_list(say_maybe_target)
+		face_atom(seen)
 		annoyed += 14
 		sleep(1 SECOND) //For realism
 
 	if(M in ListTargets(view_range))
-		try_say(say_got_target)
+		try_say_list(say_got_target)
 		target_mob = M
 		last_target_time = world.time
-		return 1
+		return M
 	else if(investigates)
 		spawn(1)
 			WanderTowards(seen)
@@ -668,6 +719,8 @@
 		if(F)
 			T = F
 			break
+		else if(specific_targets)
+			return 0
 
 		if(isliving(A))
 			var/mob/living/L = A
@@ -695,6 +748,9 @@
 		if(set_target(T))
 			handle_stance(STANCE_ATTACK)
 
+	return T
+
+//Used for special targeting or reactions
 /mob/living/simple_animal/proc/Found(var/atom/A)
 	return
 
@@ -708,16 +764,17 @@
 	for(var/mob/living/simple_animal/F in faction_friends)
 		if(F == src) continue
 		if(get_dist(src,F) <= F.assist_distance)
-			spawn(1)
-				ai_log("RequestHelp() to [F]",3)
-				F.HelpRequested(src)
+			spawn(0)
+				if(F) //They could have died by now and some mobs delete themselves on death
+					ai_log("RequestHelp() to [F]",3)
+					F.HelpRequested(src)
 
 //Someone wants help?
 /mob/living/simple_animal/proc/HelpRequested(var/mob/living/simple_animal/F)
-	if(!stance == STANCE_IDLE) //WE'RE BUSY, GO AWAY
-		ai_log("HelpRequested() by [F] but we're busy",2)
+	if(!(stance == STANCE_IDLE) || stat)
+		ai_log("HelpRequested() by [F] but we're busy/dead",2)
 		return
-	if(get_dist(src,F) <= 1)
+	if(get_dist(src,F) <= follow_dist)
 		ai_log("HelpRequested() by [F] but we're already here",2)
 		return
 
@@ -812,7 +869,7 @@
 		ai_log("FollowTarget() Bailing because we're disabled",2)
 		return
 
-	if((get_dist(src,follow_mob) <= 2))
+	if((get_dist(src,follow_mob) <= follow_dist))
 		ai_log("FollowTarget() Already at target",2)
 		return
 
@@ -821,7 +878,7 @@
 
 	//Bad pathing
 	if(run_at_them)
-		walk_to(src, follow_mob, 2, move_to_delay)
+		walk_to(src, follow_mob, follow_dist, move_to_delay)
 		ai_log("FollowTarget() walk_to([src],[target_mob],2,[move_to_delay])",3)
 		spawn(3 SECONDS)
 			if(src && follow_mob && (stance == STANCE_FOLLOW) && (get_dist(src,follow_mob) >= start_distance))
@@ -830,12 +887,12 @@
 
 	//Good pathing
 	else
-		GetPath(get_turf(follow_mob),2)
+		GetPath(get_turf(follow_mob),follow_dist)
 		if(!astarpathing && walk_list.len)
 			spawn(1)
 				ai_log("FollowTarget() A* path getting underway",2)
 				//Do the path!
-				var/result = WalkPath(target_thing = follow_mob, target_dist = 2)
+				var/result = WalkPath(target_thing = follow_mob, target_dist = follow_dist)
 				ai_log("FollowTarget() WalkPath r:[result]",3)
 
 		else
@@ -958,7 +1015,7 @@
 
 //Return home, all-in-one proc (though does target scan and drop out if they see one)
 /mob/living/simple_animal/proc/GoHome()
-	if(!home_turf || run_at_them) return
+	if(!home_turf) return
 	if(astarpathing) ForgetPath()
 	ai_log("GoHome()",1)
 	var/close_enough = 2
@@ -982,12 +1039,13 @@
 
 	ai_log("AttackTarget() vs. [target_mob]",1)
 	var/distance = get_dist(src, target_mob)
+	face_atom(target_mob)
 
 	//Hadoooooken!
 	if(prob(spattack_prob) && (distance >= spattack_min_range) && (distance <= spattack_max_range))
 		ai_log("AttackTarget() special",3)
-		SpecialAtkTarget()
-		return 1
+		if(SpecialAtkTarget()) //Might not succeed/be allowed, do something else.
+			return 1
 	//AAAAH!
 	if(distance <= 1)
 		ai_log("AttackTarget() melee",3)
@@ -1020,9 +1078,14 @@
 //The actual top-level ranged attack proc
 /mob/living/simple_animal/proc/ShootTarget()
 	var/target = target_mob
-	visible_message("\red <b>[src]</b> fires at [target]!", 1)
-
 	var/tturf = get_turf(target)
+
+	if(firing_lines && !CheckFiringLine(tturf))
+		step_rand(src)
+		face_atom(tturf)
+		return 0
+
+	visible_message("<span class='danger'><b>[src]</b> fires at [target]!</span>", 1)
 	if(rapid)
 		spawn(1)
 			Shoot(tturf, src.loc, src)
@@ -1041,11 +1104,32 @@
 		if(casingtype)
 			new casingtype
 
-	return
+	return 1
+
+//Check firing lines for faction_friends (if we're not cooperative, we don't care)
+/mob/living/simple_animal/proc/CheckFiringLine(var/turf/tturf)
+	if(!tturf) return
+
+	var/turf/list/crosses = list()
+	var/this_turf = get_turf(src)
+
+	while(this_turf != tturf)
+		this_turf = get_step(this_turf,get_dir(this_turf,tturf))
+		crosses += this_turf
+
+	for(var/mob/living/FF in faction_friends)
+		if(FF.loc in crosses)
+			return 0
+
+	for(var/mob/living/F in friends)
+		if(F.loc in crosses)
+			return 0
+
+	return 1
 
 //Special attacks, like grenades or blinding spit or whatever
 /mob/living/simple_animal/proc/SpecialAtkTarget()
-	return
+	return 0
 
 //Shoot a bullet at someone
 /mob/living/simple_animal/proc/Shoot(var/target, var/start, var/user, var/bullet = 0)
@@ -1085,8 +1169,8 @@
 /mob/living/simple_animal/proc/ListTargets(var/dist = view_range)
 	var/list/L = hearers(src, dist)
 
-	for (var/obj/mecha/M in mechas_list)
-		if (M.z == src.z && get_dist(src, M) <= dist)
+	for(var/obj/mecha/M in mechas_list)
+		if ((M.z == src.z) && (get_dist(src, M) <= dist) && (isInSight(src,M)))
 			L += M
 
 	return L
@@ -1182,4 +1266,22 @@
 
 //Commands, reactions, etc
 /mob/living/simple_animal/hear_say(var/message, var/verb = "says", var/datum/language/language = null, var/alt_name = "", var/italics = 0, var/mob/speaker = null, var/sound/speech_sound, var/sound_vol)
-	return //Do interesting things TODO
+	..()
+	if(reacts && speaker && (message in reactions) && (!hostile || isliving(speaker)) && say_understands(speaker,language))
+		var/mob/living/L = speaker
+		if(L.faction == faction)
+			spawn(10)
+				face_atom(speaker)
+				say(reactions[message])
+
+//Just some subpaths for easy searching
+/mob/living/simple_animal/hostile
+	faction = "not yours"
+	hostile = 1
+	retaliate = 1
+	stop_when_pulled = 0
+	destroy_surroundings = 1
+
+/mob/living/simple_animal/retaliate
+	retaliate = 1
+	destroy_surroundings = 1
