@@ -266,6 +266,7 @@
 	handle_weakened()
 	handle_paralysed()
 	handle_supernatural()
+	handle_environment() //Atmos
 	update_icon()
 
 	//Movement
@@ -276,15 +277,12 @@
 	if(!ai_inactive && speak_chance && stance == STANCE_IDLE) // Allowed to chatter?
 		handle_idle_speaking()
 
-	//Atmos
-	handle_environment()
-
 	//Stanceyness
-	if(!stat && !ai_inactive)
+	if(!ai_inactive)
 		handle_stance()
 
 	//Resisting out of things
-	if(incapacitated(INCAPACITATION_DEFAULT) && stance != STANCE_IDLE)
+	if(!ai_inactive && incapacitated(INCAPACITATION_DEFAULT) && stance != STANCE_IDLE)
 		resist()
 
 	return 1
