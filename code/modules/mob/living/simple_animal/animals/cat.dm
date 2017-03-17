@@ -8,6 +8,7 @@
 	icon_dead = "cat2_dead"
 
 	hostile = 1 //To mice, anyway.
+	investigates = 1
 	specific_targets = 1 //Only targets with Found()
 	run_at_them = 0 //DOMESTICATED
 	view_range = 5
@@ -63,11 +64,12 @@
 		var/mob/living/simple_animal/mouse/mouse = target_mob
 		mouse.splat()
 		visible_emote(pick("bites \the [mouse]!","toys with \the [mouse].","chomps on \the [mouse]!"))
+		return mouse
 	else
 		..()
 
 /mob/living/simple_animal/cat/Found(var/atom/found_atom)
-	if(istype(found_atom,/mob/living/simple_animal/mouse))
+	if(istype(found_atom,/mob/living/simple_animal/mouse) && SA_attackable(found_atom))
 		return found_atom
 
 /mob/living/simple_animal/cat/proc/handle_flee_target()
