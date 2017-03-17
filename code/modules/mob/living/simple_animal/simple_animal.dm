@@ -10,8 +10,8 @@
 	maxHealth = 20
 
 	mob_bump_flag = SIMPLE_ANIMAL
-	mob_swap_flags = MONKEY|SLIME|SIMPLE_ANIMAL
-	mob_push_flags = MONKEY|SLIME|SIMPLE_ANIMAL
+	mob_swap_flags = MONKEY|SLIME|HUMAN
+	mob_push_flags = MONKEY|SLIME|HUMAN
 
 	//Settings for played mobs
 	var/show_stat_health = 1		// Does the percentage health show in the stat panel for the mob
@@ -41,7 +41,7 @@
 	var/wander = 1					// Does the mob wander around when idle?
 	var/wander_distance = 3			// How far the mob will wander before going home (assuming they are allowed to do that)
 	var/returns_home = 0			// Mob knows how to return to wherever it started
-	var/turns_per_move = 1			// How many life() cycles to wait between each move?
+	var/turns_per_move = 1			// How many life() cycles to wait between each wander mov?
 	var/stop_when_pulled = 1 		// When set to 1 this stops the animal from moving when someone is pulling it.
 	var/follow_dist = 2				// Distance the mob tries to follow a friend
 	var/obstacles = list()			// Things this mob refuses to move through
@@ -85,7 +85,7 @@
 	var/investigates = 0			// Do I investigate if I saw someone briefly?
 	var/attack_same = 0				// Do I attack members of my own faction?
 	var/cooperative = 0				// Do I ask allies to help me?
-	var/assist_distance = 25		// How far will I go to assist my comrades?
+	var/assist_distance = 25		// Radius in which I'll ask my comrades for help.
 	var/supernatural = 0			// If the mob is supernatural (used in null-rod stuff for banishing?)
 	var/grab_resist = 75			// Chance of me resisting a grab attempt.
 
@@ -159,7 +159,7 @@
 	verbs -= /mob/verb/observe
 	home_turf = get_turf(src)
 	path_overlay = new(path_icon,path_icon_state)
-	move_to_delay = max(3,move_to_delay) //Protection against people coding things incorrectly and A* pathing 100% of the time
+	move_to_delay = max(2,move_to_delay) //Protection against people coding things incorrectly and A* pathing 100% of the time
 
 	for(var/L in has_langs)
 		languages |= all_languages[L]
@@ -184,12 +184,16 @@
 	default_language = null
 	target_mob = null
 	follow_mob = null
+	if(myid)
+		qdel(myid)
+		myid = null
 
 	if(faction_friends.len) //This list is shared amongst the faction
 		faction_friends -= src
 
 	friends.Cut() //This one is not
 	walk_list.Cut()
+	languages.Cut()
 	..()
 
 //Client attached
@@ -266,52 +270,73 @@
 
 	//Movement
 	if(!ai_inactive && !stop_automated_movement && wander && !anchored) //Allowed to move?
-		if(isturf(src.loc) && !resting && !buckled && canmove) //Physically capable of moving?
-			lifes_since_move++ //Increment turns since move (turns are life() cycles)
-			if(lifes_since_move >= turns_per_move)
-				if(!(stop_when_pulled && pulledby)) //Some animals don't move when pulled
-					var/moving_to = 0 // otherwise it always picks 4, fuck if I know.   Did I mention fuck BYOND
-					moving_to = pick(cardinal)
-					dir = moving_to			//How about we turn them the direction they are moving, yay.
-					Move(get_step(src,moving_to))
-					lifes_since_move = 0
+		handle_wander_movement()
 
 	//Speaking
-	if(!ai_inactive && speak_chance && stance == STANCE_IDLE)
-		if(rand(0,200) < speak_chance)
-			if(speak && speak.len)
-				if((emote_hear && emote_hear.len) || (emote_see && emote_see.len))
-					var/length = speak.len
-					if(emote_hear && emote_hear.len)
-						length += emote_hear.len
-					if(emote_see && emote_see.len)
-						length += emote_see.len
-					var/randomValue = rand(1,length)
-					if(randomValue <= speak.len)
-						try_say_list(speak)
-					else
-						randomValue -= speak.len
-						if(emote_see && randomValue <= emote_see.len)
-							visible_emote("[pick(emote_see)].")
-						else
-							audible_emote("[pick(emote_hear)].")
-				else
+	if(!ai_inactive && speak_chance && stance == STANCE_IDLE) // Allowed to chatter?
+		handle_idle_speaking()
+
+	//Atmos
+	handle_environment()
+
+	//Stanceyness
+	if(!stat && !ai_inactive)
+		handle_stance()
+
+	//Resisting out of things
+	if(incapacitated(INCAPACITATION_DEFAULT) && stance != STANCE_IDLE)
+		resist()
+
+	return 1
+
+// Peforms the random walk wandering 
+/mob/living/simple_animal/proc/handle_wander_movement()
+	if(isturf(src.loc) && !resting && !buckled && canmove) //Physically capable of moving?
+		lifes_since_move++ //Increment turns since move (turns are life() cycles)
+		if(lifes_since_move >= turns_per_move)
+			if(!(stop_when_pulled && pulledby)) //Some animals don't move when pulled
+				var/moving_to = 0 // otherwise it always picks 4, fuck if I know.   Did I mention fuck BYOND
+				moving_to = pick(cardinal)
+				dir = moving_to			//How about we turn them the direction they are moving, yay.
+				Move(get_step(src,moving_to))
+				lifes_since_move = 0
+
+// Handles random chatter, called from Life() when stance = STANCE_IDLE
+/mob/living/simple_animal/proc/handle_idle_speaking()
+	if(rand(0,200) < speak_chance)
+		if(speak && speak.len)
+			if((emote_hear && emote_hear.len) || (emote_see && emote_see.len))
+				var/length = speak.len
+				if(emote_hear && emote_hear.len)
+					length += emote_hear.len
+				if(emote_see && emote_see.len)
+					length += emote_see.len
+				var/randomValue = rand(1,length)
+				if(randomValue <= speak.len)
 					try_say_list(speak)
-			else
-				if(!(emote_hear && emote_hear.len) && (emote_see && emote_see.len))
-					visible_emote("[pick(emote_see)].")
-				if((emote_hear && emote_hear.len) && !(emote_see && emote_see.len))
-					audible_emote("[pick(emote_hear)].")
-				if((emote_hear && emote_hear.len) && (emote_see && emote_see.len))
-					var/length = emote_hear.len + emote_see.len
-					var/pick = rand(1,length)
-					if(pick <= emote_see.len)
+				else
+					randomValue -= speak.len
+					if(emote_see && randomValue <= emote_see.len)
 						visible_emote("[pick(emote_see)].")
 					else
 						audible_emote("[pick(emote_hear)].")
+			else
+				try_say_list(speak)
+		else
+			if(!(emote_hear && emote_hear.len) && (emote_see && emote_see.len))
+				visible_emote("[pick(emote_see)].")
+			if((emote_hear && emote_hear.len) && !(emote_see && emote_see.len))
+				audible_emote("[pick(emote_hear)].")
+			if((emote_hear && emote_hear.len) && (emote_see && emote_see.len))
+				var/length = emote_hear.len + emote_see.len
+				var/pick = rand(1,length)
+				if(pick <= emote_see.len)
+					visible_emote("[pick(emote_see)].")
+				else
+					audible_emote("[pick(emote_hear)].")
 
-
-	//Atmos
+// Handle interacting with and taking damage from atmos
+/mob/living/simple_animal/proc/handle_environment()
 	var/atmos_suitable = 1
 
 	var/atom/A = src.loc
@@ -363,16 +388,6 @@
 
 	if(!atmos_suitable)
 		adjustBruteLoss(unsuitable_atoms_damage)
-
-	//Stanceyness
-	if(!stat && !ai_inactive)
-		handle_stance()
-
-	//Resisting out of things
-	if(incapacitated(INCAPACITATION_DEFAULT) && stance != STANCE_IDLE)
-		resist()
-
-	return 1
 
 /mob/living/simple_animal/proc/handle_stance(var/new_stance)
 	if(ai_inactive)
@@ -449,6 +464,7 @@
 
 	return 0
 
+// When someone clicks us with an empty hand
 /mob/living/simple_animal/attack_hand(mob/living/carbon/human/M as mob)
 	..()
 
@@ -494,6 +510,7 @@
 
 	return
 
+// When somoene clicks us with an item in hand
 /mob/living/simple_animal/attackby(var/obj/item/O, var/mob/user)
 	if(istype(O, /obj/item/stack/medical))
 		if(stat != DEAD)
@@ -539,6 +556,7 @@
 
 	return 0
 
+// When someone throws something at us
 /mob/living/simple_animal/hitby(atom/movable/AM)
 	..()
 	if(AM.thrower)
@@ -607,6 +625,7 @@
 /mob/living/simple_animal/adjustFireLoss(damage)
 	health = Clamp(health - damage, 0, maxHealth)
 
+// Check target_mob if worthy of attack (i.e. check if they are dead or empty mecha)
 /mob/living/simple_animal/proc/SA_attackable(target_mob)
 	ai_log("SA_attackable([target_mob])",3)
 	if (isliving(target_mob))
