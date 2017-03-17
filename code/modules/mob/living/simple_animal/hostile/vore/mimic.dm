@@ -124,8 +124,6 @@
 // Copy Mimic
 //
 
-var/global/list/protected_objects = list(/obj/structure/table, /obj/structure/cable, /obj/structure/window, /obj/item/projectile/animate)
-
 /mob/living/simple_animal/hostile/vore/mimic/copy
 
 	health = 100
