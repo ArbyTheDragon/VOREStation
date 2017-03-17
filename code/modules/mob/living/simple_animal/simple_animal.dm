@@ -235,7 +235,7 @@
 /mob/living/simple_animal/update_icon()
 	..()
 	//Awake and normal
-	if((stat == CONSCIOUS) && !resting)
+	if((stat == CONSCIOUS) && (!icon_rest || !resting))
 		icon_state = icon_living
 
 	//Resting or KO'd
