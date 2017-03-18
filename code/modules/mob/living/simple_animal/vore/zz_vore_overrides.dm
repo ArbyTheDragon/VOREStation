@@ -128,6 +128,8 @@
 	vore_max_size = RESIZE_TINY
 
 /mob/living/simple_animal/cat/Found(var/atom/found_atom)
+	if(!SA_attackable(found_atom))
+		return null
 	if(istype(found_atom,/mob/living/simple_animal/mouse))
 		return found_atom
 	if(found_atom in friends)
@@ -146,6 +148,8 @@
 	vore_max_size = RESIZE_TINY
 
 /mob/living/simple_animal/fox/Found(var/atom/found_atom)
+	if(!SA_attackable(found_atom))
+		return null
 	if(istype(found_atom,/mob/living/simple_animal/mouse))
 		return found_atom
 	if(found_atom in friends)

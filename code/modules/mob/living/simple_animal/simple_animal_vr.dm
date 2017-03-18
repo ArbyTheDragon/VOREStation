@@ -84,6 +84,7 @@
 	// If they're down or we can eat standing, do it
 	if(!target_mob.canmove || vore_standing_too)
 		EatTarget()
+		return target_mob
 	else
 		return ..()
 
