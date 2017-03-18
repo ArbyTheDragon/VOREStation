@@ -54,19 +54,19 @@
 
 /mob/living/simple_animal/proc/will_eat(var/mob/living/M)
 	if(!istype(M)) //Can't eat 'em if they ain't /mob/living
-		ai_log("vr wont eat [M] because they are not /mob/living", 3)
+		ai_log("vr/wont eat [M] because they are not /mob/living", 3)
 		return 0
 	if(vore_ignores_undigestable && !M.digestable) //Don't eat people with nogurgle prefs
-		ai_log("vr wont eat [M] because I am picky", 3)
+		ai_log("vr/wont eat [M] because I am picky", 3)
 		return 0
 	if(M in prey_excludes) // They're excluded
-		ai_log("vr wont eat [M] because they are excluded", 3)
+		ai_log("vr/wont eat [M] because they are excluded", 3)
 		return 0
 	if(M.size_multiplier < vore_min_size || M.size_multiplier > vore_max_size)
-		ai_log("vr wont eat [M] because they too small or too big", 3)
+		ai_log("vr/wont eat [M] because they too small or too big", 3)
 		return 0
 	if(vore_capacity != 0 && (vore_fullness + M.size_multiplier > vore_capacity)) // We're too full to fit them
-		ai_log("vr wont eat [M] because I am too full", 3)
+		ai_log("vr/wont eat [M] because I am too full", 3)
 		return 0
 	return 1
 
@@ -90,7 +90,7 @@
 // Attempt to eat target
 // TODO - Review this.  Could be some issues here
 /mob/living/simple_animal/proc/EatTarget()
-	ai_log("EatTarget() [target_mob]",2)
+	ai_log("vr/EatTarget() [target_mob]",2)
 	init_belly()
 	stop_automated_movement = 1
 	var/old_target = target_mob
