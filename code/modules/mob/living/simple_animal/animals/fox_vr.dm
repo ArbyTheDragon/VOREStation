@@ -8,8 +8,10 @@
 	icon_rest = "fox2_rest"
 
 	hostile = 1 //To mice, anyway.
-	specific_targets = 1 //Only uses Found(A)
-	run_at_them = 0
+	investigates = 1
+	specific_targets = 1 //Only targets with Found()
+	run_at_them = 0 //DOMESTICATED
+	view_range = 5
 
 	turns_per_move = 5
 	see_in_dark = 6
@@ -28,6 +30,8 @@
 	speak_emote = list("geckers", "barks")
 	emote_hear = list("howls","barks")
 	emote_see = list("shakes its head", "shivers", "geckers")
+	say_maybe_target = list("Yip?","Yap?")
+	say_got_target = list("YAP!","YIP!")
 
 	meat_amount = 1
 	meat_type = /obj/item/weapon/reagent_containers/food/snacks/meat/fox
@@ -84,16 +88,19 @@
 
 /mob/living/simple_animal/fox/proc/handle_flee_target()
 	//see if we should stop fleeing
-	if (flee_target && !(flee_target.loc in view(src)))
+	if (flee_target && !(flee_target in ListTargets(view_range)))
 		flee_target = null
-		stop_automated_movement = 0
+		GiveUpMoving()
 
-	if (flee_target)
+	if (flee_target && !stat && !buckled)
+		if (resting)
+			lay_down()
 		if(prob(25)) say("GRRRRR!")
 		stop_automated_movement = 1
 		walk_away(src, flee_target, 7, 2)
 
 /mob/living/simple_animal/fox/react_to_attack(var/atom/A)
+	if(A == src) return
 	flee_target = A
 	turns_since_scan = 5
 
