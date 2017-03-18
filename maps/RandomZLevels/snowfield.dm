@@ -18,8 +18,8 @@
 	mobcountmax = 100
 	floracountmax = 7000
 	valid_mobs = list(/mob/living/simple_animal/hostile/samak/polar, /mob/living/simple_animal/hostile/diyaab/polar,
-					/mob/living/simple_animal/hostile/shantak/polar, /mob/living/simple_animal/hostile/bear/polar/vore,
-					/mob/living/simple_animal/hostile/wolf/vore)
+					/mob/living/simple_animal/hostile/shantak/polar, /mob/living/simple_animal/hostile/bear/polar,
+					/mob/living/simple_animal/hostile/wolf)
 	valid_flora = list(/obj/structure/flora/tree/pine, /obj/structure/flora/tree/pine, /obj/structure/flora/tree/pine,
 					/obj/structure/flora/tree/dead, /obj/structure/flora/grass/brown, /obj/structure/flora/grass/green,
 					/obj/structure/flora/grass/both, /obj/structure/flora/bush, /obj/structure/flora/ausbushes/grassybush,
@@ -43,13 +43,16 @@
 
 // -- Mobs -- //
 
-/mob/living/simple_animal/hostile/bear/polar/vore // More aggressive than normal bears so none of that fancy life() stuff.
+/mob/living/simple_animal/hostile/bear/polar // More aggressive than normal bears so none of that fancy life() stuff.
 	name = "polar bear"
 	desc = "The real question is, why are you examining it, instead of running away?"
+	icon = 'icons/mob/vore.dmi'
 	icon_state = "polarbear"
 	icon_living = "polarbear"
 	icon_dead = "polarbear-dead"
 	icon_gib = "bear-gib"
+	vore_icons = SA_ICON_LIVING
+	vore_active = 1
 
 	faction = "polar"
 	maxHealth = 80

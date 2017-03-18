@@ -1,6 +1,7 @@
 /mob/living/simple_animal/horse
 	name = "horse"
 	desc = "Don't look it in the mouth."
+	icon = 'icons/mob/vore.dmi'
 	icon_state = "horse"
 	icon_living = "horse"
 	icon_dead = "horse-dead"
@@ -29,4 +30,7 @@
 	meat_amount = 4
 	meat_type = /obj/item/weapon/reagent_containers/food/snacks/meat
 
-/mob/living/simple_animal/horse/vore
+// Activate Noms!
+/mob/living/simple_animal/horse
+	vore_active = 1
+	vore_icons = SA_ICON_LIVING

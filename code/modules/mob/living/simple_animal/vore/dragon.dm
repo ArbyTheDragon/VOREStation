@@ -1,6 +1,7 @@
-/mob/living/simple_animal/hostile/large/dragon
+/mob/living/simple_animal/hostile/dragon
 	name = "phoron dragon"
 	desc = "Here to pillage stations and kidnap princesses, and there probably aren't any princesses."
+	icon = 'icons/mob/vore64x64.dmi'
 	icon_dead = "reddragon-dead"
 	icon_living = "reddragon"
 	icon_state = "reddragon"
@@ -25,18 +26,23 @@
 
 	meat_type = /obj/item/weapon/reagent_containers/food/snacks/carpmeat
 
+	old_x = -16
 	old_y = 0
+	pixel_x = -16
 	pixel_y = 0
 
-/mob/living/simple_animal/hostile/vore/large/dragon/Process_Spacemove(var/check_drift = 0)
+/mob/living/simple_animal/hostile/large/dragon/Process_Spacemove(var/check_drift = 0)
 	return 1	//No drifting in space for space dragons!
 
-/mob/living/simple_animal/hostile/vore/large/dragon/FindTarget()
+/mob/living/simple_animal/hostile/large/dragon/FindTarget()
 	. = ..()
 	if(.)
 		custom_emote(1,"snaps at [.]")
 
-/mob/living/simple_animal/hostile/large/dragon/vore
+// Activate Noms!
+/mob/living/simple_animal/hostile/large/dragon
 	vore_active = 1
 	vore_capacity = 2
 	vore_escape_chance = 5
+	vore_pounce_chance = 50
+	vore_icons = SA_ICON_LIVING

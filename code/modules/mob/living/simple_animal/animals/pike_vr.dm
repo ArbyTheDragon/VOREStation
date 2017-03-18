@@ -20,6 +20,7 @@
 
 	meat_amount = 10
 
+	old_x = -16
 	pixel_x = -16
 
 /mob/living/simple_animal/hostile/carp/pike/weak

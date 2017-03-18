@@ -44,7 +44,7 @@
 
 	var/stance_step = 0
 
-/mob/living/simple_animal/hostile/bear/handle_stance(var/new_stance)
+/mob/living/simple_animal/hostile/bear/handle_stance()
 	switch(stance)
 		if(STANCE_TIRED)
 			stop_automated_movement = 1

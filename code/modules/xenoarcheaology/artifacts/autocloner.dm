@@ -23,10 +23,10 @@
 	if(prob(33))
 		spawn_type = pick(\
 		/mob/living/simple_animal/hostile/giant_spider/nurse,\
-		/mob/living/simple_animal/hostile/alien/vore,\
-		/mob/living/simple_animal/hostile/bear/vore,\
-		/mob/living/simple_animal/hostile/carp/vore,\
-		/mob/living/simple_animal/hostile/creature/vore\
+		/mob/living/simple_animal/hostile/alien,\
+		/mob/living/simple_animal/hostile/bear,\
+		/mob/living/simple_animal/hostile/carp,\
+		/mob/living/simple_animal/hostile/creature\
 		) // Vorestation Edits
 	else
 		spawn_type = pick(\

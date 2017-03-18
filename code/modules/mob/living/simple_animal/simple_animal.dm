@@ -128,8 +128,8 @@
 								)
 
 	//Scary debug things
-	var/debug_ai = 0				// Logging level for this mob (1,2,3)
-	var/path_display = 0			// Will display the path in green when pathing
+	var/debug_ai = 3				// Logging level for this mob (1,2,3)
+	var/path_display = 1			// Will display the path in green when pathing
 	var/path_icon = 'icons/misc/debug_group.dmi' // What icon to use for the overlay
 	var/path_icon_state = "red"		// What state to use for the overlay
 	var/icon/path_overlay			// A reference to restart
@@ -151,6 +151,7 @@
 	var/last_target_time = 0		// When we last set our target, to prevent juggles
 	var/last_follow_time = 0		// When did we last get asked to follow someone?
 	var/last_helpask_time = 0		// When did we last call for help?
+	var/follow_until_time = 0		// Give up following when we reach this time (0 = never)
 	var/annoyed = 0					// Do people keep distract-kiting us?
 	////// ////// //////
 
@@ -266,9 +267,10 @@
 	handle_weakened()
 	handle_paralysed()
 	handle_supernatural()
-	handle_environment() //Atmos
+	handle_atmos() //Atmos
 	update_icon()
 
+	ai_log("Life() - stance=[stance] ai_inactive=[ai_inactive]", 4)
 	//Movement
 	if(!ai_inactive && !stop_automated_movement && wander && !anchored) //Allowed to move?
 		handle_wander_movement()
@@ -334,7 +336,8 @@
 					audible_emote("[pick(emote_hear)].")
 
 // Handle interacting with and taking damage from atmos
-/mob/living/simple_animal/proc/handle_environment()
+// TODO - Refactor this to use handle_environment() like a good /mob/living
+/mob/living/simple_animal/proc/handle_atmos()
 	var/atmos_suitable = 1
 
 	var/atom/A = src.loc
@@ -387,15 +390,20 @@
 	if(!atmos_suitable)
 		adjustBruteLoss(unsuitable_atoms_damage)
 
+// For setting the stance WITHOUT processing it
+/mob/living/simple_animal/proc/set_stance(var/new_stance)
+	stance = new_stance
+	stance_changed = world.time
+	ai_log("set_stance() changing to [new_stance]",2)
+
+// For proccessing the current stance, or setting and processing a new one
 /mob/living/simple_animal/proc/handle_stance(var/new_stance)
 	if(ai_inactive)
 		stance = STANCE_IDLE
 		return
 
 	if(new_stance)
-		stance = new_stance
-		stance_changed = world.time
-		ai_log("handle_stance() changing to [new_stance]",2)
+		set_stance(new_stance)
 
 	switch(stance)
 		if(STANCE_IDLE)
@@ -418,6 +426,9 @@
 		if(STANCE_FOLLOW)
 			annoyed = 15
 			FollowTarget()
+			if(follow_until_time && world.time > follow_until_time)
+				LoseFollow()
+				return
 			if(hostile)
 				FindTarget()
 		if(STANCE_ATTACK)
@@ -714,14 +725,16 @@
 
 	return 0
 
-/mob/living/simple_animal/proc/set_follow(var/mob/M)
-	ai_log("SetFollow([M])",2)
+// Set a follow target, with optional time for how long to follow them.
+/mob/living/simple_animal/proc/set_follow(var/mob/M, var/follow_for = 0)
+	ai_log("SetFollow([M]) for=[follow_for]",2)
 	if(!M || (world.time - last_target_time < 4 SECONDS) && follow_mob)
 		ai_log("SetFollow() can't set it again so soon",3)
 		return 0
 
 	follow_mob = M
 	last_follow_time = world.time
+	follow_until_time = !follow_for ? 0 : world.time + follow_for
 	return 1
 
 //Scan surroundings for a valid target
@@ -795,7 +808,7 @@
 		ai_log("HelpRequested() by [F] but we're already here",2)
 		return
 
-	if(set_follow(F))
+	if(set_follow(F, 10 SECONDS))
 		handle_stance(STANCE_FOLLOW)
 
 //Move to a target (or near if we're ranged)

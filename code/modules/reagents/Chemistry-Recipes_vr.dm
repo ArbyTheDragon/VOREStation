@@ -261,8 +261,8 @@
 	on_reaction(var/datum/reagents/holder)
 		var/mob_path = /mob/living/simple_animal/hostile/vore
 		var/blocked = list(
-			/mob/living/simple_animal/hostile/mimic/vore,
-			/mob/living/simple_animal/hostile/alien/queen/large/vore
+			/mob/living/simple_animal/hostile/mimic,
+			/mob/living/simple_animal/hostile/alien/queen
 			)//exclusion list for things you don't want the reaction to create.
 		var/list/voremobs = typesof(mob_path) - mob_path - blocked // list of possible hostile mobs
 
