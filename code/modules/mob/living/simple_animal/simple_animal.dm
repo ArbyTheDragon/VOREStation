@@ -289,7 +289,7 @@
 
 	return 1
 
-// Peforms the random walk wandering 
+// Peforms the random walk wandering
 /mob/living/simple_animal/proc/handle_wander_movement()
 	if(isturf(src.loc) && !resting && !buckled && canmove) //Physically capable of moving?
 		lifes_since_move++ //Increment turns since move (turns are life() cycles)
@@ -461,13 +461,13 @@
 	if(!Proj)
 		return
 	ai_log("bullet_act() I was shot by: [Proj.firer]",2)
+
 	if(Proj.taser_effect)
 		stun_effect_act(0, Proj.agony)
 
-	if(Proj.nodamage)
-		return
+	if(!Proj.nodamage)
+		adjustBruteLoss(Proj.damage)
 
-	adjustBruteLoss(Proj.damage)
 	if(Proj.firer)
 		react_to_attack(Proj.firer)
 
@@ -1210,24 +1210,26 @@
 	if(!direction)
 		direction = pick(cardinal) //FLAIL WILDLY
 
+	var/turf/problem_turf = get_step(src, direction)
+
 	ai_log("DestroySurroundings([direction])",3)
-	for(var/obj/structure/window/obstacle in get_step(src, direction))
+	for(var/obj/structure/window/obstacle in problem_turf)
 		if(obstacle.dir == reverse_dir[dir]) // So that windows get smashed in the right order
 			ai_log("DestroySurroundings() directional window hit",3)
 			obstacle.attack_generic(src,rand(melee_damage_lower,melee_damage_upper),attacktext)
 			return
 
-	var/obj/structure/obstacle = locate(/obj/structure, get_step(src, direction))
+	var/obj/structure/obstacle = locate(/obj/structure, problem_turf)
 	if(istype(obstacle, /obj/structure/window) || istype(obstacle, /obj/structure/closet) || istype(obstacle, /obj/structure/table) || istype(obstacle, /obj/structure/grille))
 		ai_log("DestroySurroundings() generic structure hit [obstacle]",3)
 		obstacle.attack_generic(src,rand(melee_damage_lower,melee_damage_upper),attacktext)
 		return
 
-	var/obj/machinery/door/baddoor = locate(/obj/machinery/door, get_step(src, direction))
-	if(istype(baddoor) && baddoor.density)
-		ai_log("DestroySurroundings() door hit [baddoor]",3)
-		baddoor.attack_generic(src,rand(melee_damage_lower,melee_damage_upper),attacktext)
-		return
+	for(var/obj/machinery/door/baddoor in problem_turf) //Required since firelocks take up the same turf
+		if(baddoor.density)
+			ai_log("DestroySurroundings() door hit [baddoor]",3)
+			baddoor.attack_generic(src,rand(melee_damage_lower,melee_damage_upper),attacktext)
+			return
 
 //Check for shuttle bumrush
 /mob/living/simple_animal/proc/check_horde()
