@@ -127,21 +127,36 @@
 	specific_targets = 0 // Targeting UNLOCKED
 	vore_max_size = RESIZE_TINY
 
-/mob/living/simple_animal/cat/fluff/ListTargets()
-	. = ..()
-	if(friend)
-		return . - friend
+/mob/living/simple_animal/cat/Found(var/atom/found_atom)
+	if(istype(found_atom,/mob/living/simple_animal/mouse))
+		return found_atom
+	if(found_atom in friends)
+		return null
+	if(will_eat(found_atom))
+		return found_atom
+
+/mob/living/simple_animal/cat/fluff/Found(var/atom/found_atom)
+	if (friend == found_atom)
+		return null
+	return ..()
 
 /mob/living/simple_animal/fox
 	vore_active = 1
 	// NO VORE SPRITES
-	specific_targets = 0 // Targeting UNLOCKED
 	vore_max_size = RESIZE_TINY
 
-/mob/living/simple_animal/fox/fluff/ListTargets()
-	. = ..()
-	if(friend)
-		return . - friend
+/mob/living/simple_animal/fox/Found(var/atom/found_atom)
+	if(istype(found_atom,/mob/living/simple_animal/mouse))
+		return found_atom
+	if(found_atom in friends)
+		return null
+	if(will_eat(found_atom))
+		return found_atom
+
+/mob/living/simple_animal/fox/fluff/Found(var/atom/found_atom)
+	if (friend == found_atom)
+		return null
+	return ..()
 
 /mob/living/simple_animal/hostile/goose
 	vore_active = 1
