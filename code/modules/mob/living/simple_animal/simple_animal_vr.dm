@@ -83,8 +83,7 @@
 
 	// If they're down or we can eat standing, do it
 	if(!target_mob.canmove || vore_standing_too)
-		EatTarget()
-		return target_mob
+		return EatTarget()
 	else
 		return ..()
 
@@ -101,6 +100,7 @@
 	if(.)
 		// If we succesfully ate them, lose the target
 		LoseTarget()
+		return old_target
 	else if(old_target == target_mob)
 		// If we didn't but they are still our target, go back to attack.
 		// but don't run the handler immediately, wait until next tick

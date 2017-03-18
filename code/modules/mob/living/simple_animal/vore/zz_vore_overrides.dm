@@ -127,6 +127,11 @@
 	specific_targets = 0 // Targeting UNLOCKED
 	vore_max_size = RESIZE_TINY
 
+/mob/living/simple_animal/cat/PunchTarget()
+	if(istype(target_mob,/mob/living/simple_animal/mouse))
+		return EatTarget()
+	else ..()
+
 /mob/living/simple_animal/cat/Found(var/atom/found_atom)
 	if(!SA_attackable(found_atom))
 		return null
@@ -146,6 +151,11 @@
 	vore_active = 1
 	// NO VORE SPRITES
 	vore_max_size = RESIZE_TINY
+
+/mob/living/simple_animal/fox/PunchTarget()
+	if(istype(target_mob,/mob/living/simple_animal/mouse))
+		return EatTarget()
+	else ..()
 
 /mob/living/simple_animal/fox/Found(var/atom/found_atom)
 	if(!SA_attackable(found_atom))
