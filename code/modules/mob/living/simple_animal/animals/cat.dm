@@ -74,16 +74,19 @@
 
 /mob/living/simple_animal/cat/proc/handle_flee_target()
 	//see if we should stop fleeing
-	if (flee_target && !(flee_target.loc in view(src)))
+	if (flee_target && !(flee_target in ListTargets(view_range)))
 		flee_target = null
-		stop_automated_movement = 0
+		GiveUpMoving()
 
-	if (flee_target)
+	if (flee_target && !stat && !buckled)
+		if (resting)
+			lay_down()
 		if(prob(25)) say("HSSSSS")
 		stop_automated_movement = 1
 		walk_away(src, flee_target, 7, 2)
 
 /mob/living/simple_animal/cat/react_to_attack(var/atom/A)
+	if(A == src) return
 	flee_target = A
 	turns_since_scan = 5
 
